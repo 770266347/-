@@ -1,0 +1,81 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scenes/main/Main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/ui/HUD.gd" id="2_hud"]
+[ext_resource type="Script" path="res://scripts/ui/GeneratorPanel.gd" id="3_generator_panel"]
+[ext_resource type="Script" path="res://scripts/ui/UpgradePanel.gd" id="4_upgrade_panel"]
+[ext_resource type="Script" path="res://scripts/ui/ToastBar.gd" id="5_toast"]
+[ext_resource type="Script" path="res://scripts/systems/ProductionSystem.gd" id="6_production"]
+[ext_resource type="Script" path="res://scripts/systems/GeneratorSystem.gd" id="7_generator"]
+[ext_resource type="Script" path="res://scripts/systems/UpgradeSystem.gd" id="8_upgrade"]
+[ext_resource type="Script" path="res://scripts/ui/BottleSpawnArea.gd" id="9_bottle_area"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="ProductionSystem" type="Node" parent="Systems"]
+script = ExtResource("6_production")
+
+[node name="GeneratorSystem" type="Node" parent="Systems"]
+script = ExtResource("7_generator")
+
+[node name="UpgradeSystem" type="Node" parent="Systems"]
+script = ExtResource("8_upgrade")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.82, 0.94, 0.88, 1)
+
+[node name="BottleArea" type="Control" parent="."]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 132.0
+offset_right = 704.0
+offset_bottom = 900.0
+script = ExtResource("9_bottle_area")
+
+[node name="HUD" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_hud")
+
+[node name="GeneratorPanel" type="Control" parent="."]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 120.0
+offset_right = 336.0
+offset_bottom = 690.0
+script = ExtResource("3_generator_panel")
+
+[node name="UpgradePanel" type="Control" parent="."]
+layout_mode = 0
+offset_left = 944.0
+offset_top = 120.0
+offset_right = 1264.0
+offset_bottom = 690.0
+script = ExtResource("4_upgrade_panel")
+
+[node name="ToastBar" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 480.0
+offset_top = 600.0
+offset_right = 800.0
+offset_bottom = 700.0
+script = ExtResource("5_toast")

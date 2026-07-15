@@ -1,0 +1,31 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# Godot-specific export output
+/export/
+*.zip
+*.exe
+*.pck
+
+# Editor / user state
+.godot_user/
+*.translation
+export_presets.cfg
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local tooling
+demand/_extract_*/
+.env
+.env.*
+!.env.example
+image2接口/test_output/

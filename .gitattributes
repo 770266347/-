@@ -1,0 +1,22 @@
+# Normalize EOL for all files that Git considers text files.
+* text=auto eol=lf
+
+# Godot-specific
+*.gd        text eol=lf
+*.tscn      text eol=lf
+*.tres      text eol=lf
+*.import    text eol=lf
+*.cfg       text eol=lf
+*.json      text eol=lf
+*.csv       text eol=lf
+
+# Binary assets (prefer Git LFS in a real repo; Git native is fine here)
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.ogg       binary
+*.wav       binary
+*.mp3       binary
+*.ttf       binary
+*.otf       binary
+*.aseprite  binary

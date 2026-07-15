@@ -1,0 +1,50 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="垃圾收集者"
+config/description="小体量 Godot 增量游戏：点击塑料瓶赚钱，招募帮手自动回收。"
+config/version="0.1.0"
+run/main_scene="res://scenes/main/Main.tscn"
+config/features=PackedStringArray("4.7")
+config/icon="res://icon.svg"
+
+[autoload]
+
+EventBus="*res://autoload/EventBus.gd"
+ConfigDB="*res://autoload/ConfigDB.gd"
+GameState="*res://autoload/GameState.gd"
+PlatformBridge="*res://autoload/PlatformBridge.gd"
+SaveManager="*res://autoload/SaveManager.gd"
+AudioManager="*res://autoload/AudioManager.gd"
+
+[display]
+
+window/size/viewport_width=1179
+window/size/viewport_height=2556
+window/size/window_width_override=393
+window/size/window_height_override=852
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
