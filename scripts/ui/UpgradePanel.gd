@@ -12,8 +12,8 @@ const BASE_LOGICAL_WIDTH: float = 393.0
 func _ready() -> void:
     _build()
     EventBus.currency_changed.connect(func(_a: float, _d: float): _refresh())
-    EventBus.production_changed.connect(func(_p: float): _refresh())
-    EventBus.upgrade_purchased.connect(func(_id: int, _lv: int): _refresh())
+    EventBus.upgrade_purchased.connect(func(_id, _lv: int): _refresh())
+    EventBus.unlocked_drops_changed.connect(func(): _refresh())
     _refresh()
 
 
@@ -40,7 +40,7 @@ func _build() -> void:
     scroll.add_child(list)
 
     for row in ConfigDB.get_upgrades():
-        var id: int = int(row.get("id", 0))
+        var id = row.get("id", "")
         var btn: Button = Button.new()
         btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         btn.pressed.connect(_on_buy_pressed.bind(id))
@@ -51,27 +51,67 @@ func _build() -> void:
 func _refresh() -> void:
     var system: UpgradeSystem = get_tree().root.get_node_or_null("Main/Systems/UpgradeSystem") as UpgradeSystem
     for row in ConfigDB.get_upgrades():
-        var id: int = int(row.get("id", 0))
+        var id = row.get("id", "")
         var btn: Button = buttons.get(id) as Button
         if btn == null:
             continue
-        var level: int = GameState.get_upgrade_level(id)
-        var max_level: int = int(row.get("max_level", 1))
-        var next_cost: float = ConfigDB.get_upgrade_cost(id, level + 1)
-        btn.text = "%s  Lv %d/%d\n%s\n花费 %s 元" % [
-            String(row.get("name", "Upgrade")),
-            level,
-            max_level,
-            String(row.get("description", "")),
-            BigNumber.format(next_cost)
-        ]
+        btn.text = _button_text(row)
         btn.disabled = system == null or not system.can_buy(id)
 
 
-func _on_buy_pressed(upgrade_id: int) -> void:
+func _on_buy_pressed(upgrade_id) -> void:
     var system: UpgradeSystem = get_tree().root.get_node_or_null("Main/Systems/UpgradeSystem") as UpgradeSystem
     if system != null:
         system.buy(upgrade_id)
+
+
+func _button_text(row: Dictionary) -> String:
+    var id = row.get("id", "")
+    if String(row.get("type", "")) == "unlock_drop":
+        return _unlock_button_text(row)
+
+    var level: int = GameState.get_upgrade_level(id)
+    var max_level: int = int(row.get("max_level", 1))
+    var next_cost: float = ConfigDB.get_upgrade_cost(id, level + 1)
+    return "%s  Lv %d/%d\n%s\n花费 %s 元" % [
+        String(row.get("name", "Upgrade")),
+        level,
+        max_level,
+        String(row.get("description", "")),
+        BigNumber.format(next_cost)
+    ]
+
+
+func _unlock_button_text(row: Dictionary) -> String:
+    var drop_id: String = String(row.get("unlock_drop_id", ""))
+    var cost: float = float(row.get("cost", 0.0))
+    var status: String = "花费 %s 元" % BigNumber.format(cost)
+    if GameState.is_drop_unlocked(drop_id):
+        status = "已解锁"
+    elif not _requirements_met(row):
+        status = "需要先解锁：%s" % _requirement_names(row)
+    elif not GameState.can_afford(cost):
+        status = "现金不足：需要 %s 元" % BigNumber.format(cost)
+    return "%s\n%s\n%s" % [
+        String(row.get("name", "解锁产物")),
+        String(row.get("description", "")),
+        status
+    ]
+
+
+func _requirements_met(row: Dictionary) -> bool:
+    for required_upgrade_id in row.get("requires", []):
+        if GameState.get_upgrade_level(required_upgrade_id) <= 0:
+            return false
+    return true
+
+
+func _requirement_names(row: Dictionary) -> String:
+    var names: Array = []
+    for required_upgrade_id in row.get("requires", []):
+        var required_row: Dictionary = ConfigDB.get_upgrade(required_upgrade_id)
+        names.append(String(required_row.get("name", required_upgrade_id)))
+    return "、".join(names)
 
 
 func apply_layout(viewport_size: Vector2) -> void:
@@ -87,7 +127,7 @@ func apply_layout(viewport_size: Vector2) -> void:
         var btn: Button = buttons[btn_id] as Button
         if btn == null:
             continue
-        btn.custom_minimum_size = Vector2(0.0, 80.0 * scale)
+        btn.custom_minimum_size = Vector2(0.0, 88.0 * scale)
         btn.add_theme_font_size_override("font_size", int(11.0 * scale))
 
 

@@ -1,9 +1,7 @@
 extends Node
 ## Runtime mutable player state. Persisted by SaveManager.
 
-const SAVE_VERSION: int = 2
-const UPGRADE_CLICK_MULT: int = 1
-const UPGRADE_PRODUCTION_MULT: int = 2
+const SAVE_VERSION: int = 3
 const BASE_BOTTLE_VALUE: float = 1.0
 
 var save_version: int = SAVE_VERSION
@@ -11,15 +9,12 @@ var bottles: int = 0
 var total_bottles: int = 0
 var currency: float = 0.0
 var total_earned: float = 0.0
+var current_scene_id: String = "street"
 
-## generator_id -> level
-var generators: Dictionary = {}
 ## upgrade_id -> level
 var upgrades: Dictionary = {}
-
-var _derived_dirty: bool = true
-var click_multiplier: float = 1.0
-var production_multiplier: float = 1.0
+## drop_id -> true
+var unlocked_drops: Dictionary = {}
 
 
 func reset_to_default() -> void:
@@ -28,12 +23,13 @@ func reset_to_default() -> void:
     total_bottles = 0
     currency = 0.0
     total_earned = 0.0
-    generators.clear()
+    current_scene_id = ConfigDB.get_default_scene_id()
     upgrades.clear()
-    _derived_dirty = true
+    unlocked_drops = _drop_set(ConfigDB.get_default_unlocked_drops())
     EventBus.bottle_changed.emit(bottles, 0)
     EventBus.currency_changed.emit(currency, 0.0)
-    EventBus.production_changed.emit(get_production_per_second())
+    EventBus.scene_changed.emit(current_scene_id)
+    EventBus.unlocked_drops_changed.emit()
 
 
 func add_bottles(amount: int) -> void:
@@ -65,70 +61,52 @@ func spend_currency(cost: float) -> bool:
     return true
 
 
-func get_generator_level(generator_id: int) -> int:
-    return int(generators.get(generator_id, 0))
-
-
-func set_generator_level(generator_id: int, level: int) -> void:
-    generators[generator_id] = level
-    EventBus.production_changed.emit(get_production_per_second())
-
-
-func get_upgrade_level(upgrade_id: int) -> int:
+func get_upgrade_level(upgrade_id) -> int:
     return int(upgrades.get(upgrade_id, 0))
 
 
-func set_upgrade_level(upgrade_id: int, level: int) -> void:
+func set_upgrade_level(upgrade_id, level: int) -> void:
     upgrades[upgrade_id] = level
-    _derived_dirty = true
-    EventBus.production_changed.emit(get_production_per_second())
-
-
-func get_click_value() -> float:
-    _ensure_derived()
-    return 1.0 * click_multiplier
 
 
 func get_bottles_per_collect() -> int:
     return 1
 
 
-func get_bottle_cash_value() -> float:
-    _ensure_derived()
-    return BASE_BOTTLE_VALUE * click_multiplier
+func get_drop_cash_value(base_cash: float) -> float:
+    return base_cash
 
 
-func get_generator_production(generator_id: int) -> float:
-    _ensure_derived()
-    var level: int = get_generator_level(generator_id)
-    return ConfigDB.get_generator_rate(generator_id) * float(level) * production_multiplier
+func set_current_scene_id(scene_id: String) -> bool:
+    if ConfigDB.get_scene(scene_id).is_empty():
+        return false
+    if current_scene_id == scene_id:
+        return true
+    current_scene_id = scene_id
+    EventBus.scene_changed.emit(current_scene_id)
+    return true
 
 
-func get_production_per_second() -> float:
-    _ensure_derived()
-    var total: float = 0.0
-    for generator_id in generators.keys():
-        total += ConfigDB.get_generator_rate(int(generator_id)) * float(generators[generator_id])
-    return total * production_multiplier
+func cycle_scene() -> void:
+    set_current_scene_id(ConfigDB.get_next_scene_id(current_scene_id))
 
 
-func _ensure_derived() -> void:
-    if not _derived_dirty:
-        return
-    click_multiplier = 1.0
-    production_multiplier = 1.0
-    for upgrade_id in upgrades.keys():
-        var row: Dictionary = ConfigDB.get_upgrade(int(upgrade_id))
-        if row.is_empty():
-            continue
-        var level: int = int(upgrades[upgrade_id])
-        var effect: float = float(row.get("effect_per_level", 0.0)) * float(level)
-        match int(row.get("effect_type", 0)):
-            UPGRADE_CLICK_MULT:
-                click_multiplier += effect
-            UPGRADE_PRODUCTION_MULT:
-                production_multiplier += effect
-    _derived_dirty = false
+func is_drop_unlocked(drop_id: String) -> bool:
+    return bool(unlocked_drops.get(drop_id, false))
+
+
+func unlock_drop(drop_id: String) -> bool:
+    if drop_id.is_empty() or ConfigDB.get_drop(drop_id).is_empty():
+        return false
+    if is_drop_unlocked(drop_id):
+        return false
+    unlocked_drops[drop_id] = true
+    EventBus.unlocked_drops_changed.emit()
+    return true
+
+
+func get_unlocked_drop_ids() -> Array:
+    return unlocked_drops.keys()
 
 
 func to_dict() -> Dictionary:
@@ -138,8 +116,9 @@ func to_dict() -> Dictionary:
         "total_bottles": total_bottles,
         "currency": currency,
         "total_earned": total_earned,
-        "generators": generators,
+        "current_scene_id": current_scene_id,
         "upgrades": upgrades,
+        "unlocked_drops": unlocked_drops,
     }
 
 
@@ -149,19 +128,42 @@ func from_dict(d: Dictionary) -> void:
     total_bottles = int(d.get("total_bottles", bottles))
     currency = float(d.get("currency", 0.0))
     total_earned = float(d.get("total_earned", 0.0))
-    generators = _int_key_dict(d.get("generators", {}))
-    upgrades = _int_key_dict(d.get("upgrades", {}))
-    _derived_dirty = true
+    current_scene_id = String(d.get("current_scene_id", ConfigDB.get_default_scene_id()))
+    if ConfigDB.get_scene(current_scene_id).is_empty():
+        current_scene_id = ConfigDB.get_default_scene_id()
+    upgrades = _mixed_key_level_dict(d.get("upgrades", {}))
+    unlocked_drops = _bool_key_dict(d.get("unlocked_drops", {}))
+    _merge_default_unlocked_drops()
     EventBus.bottle_changed.emit(bottles, 0)
     EventBus.currency_changed.emit(currency, 0.0)
-    EventBus.production_changed.emit(get_production_per_second())
+    EventBus.scene_changed.emit(current_scene_id)
+    EventBus.unlocked_drops_changed.emit()
 
 
-static func _int_key_dict(d: Dictionary) -> Dictionary:
+static func _mixed_key_level_dict(d: Dictionary) -> Dictionary:
     var out: Dictionary = {}
     for k in d.keys():
         var key_variant = k
         if typeof(k) == TYPE_STRING and k.is_valid_int():
             key_variant = int(k)
-        out[key_variant] = d[k]
+        out[key_variant] = int(d[k])
     return out
+
+
+static func _bool_key_dict(d: Dictionary) -> Dictionary:
+    var out: Dictionary = {}
+    for k in d.keys():
+        out[String(k)] = bool(d[k])
+    return out
+
+
+static func _drop_set(drop_ids: Array) -> Dictionary:
+    var out: Dictionary = {}
+    for drop_id in drop_ids:
+        out[String(drop_id)] = true
+    return out
+
+
+func _merge_default_unlocked_drops() -> void:
+    for drop_id in ConfigDB.get_default_unlocked_drops():
+        unlocked_drops[String(drop_id)] = true

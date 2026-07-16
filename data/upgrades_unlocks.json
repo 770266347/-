@@ -1,0 +1,49 @@
+{
+    "upgrades": [
+        {
+            "id": "unlock_street_can",
+            "name": "解锁易拉罐",
+            "description": "街道开始出现易拉罐。",
+            "type": "unlock_drop",
+            "cost": 30,
+            "unlock_drop_id": "street_can",
+            "requires": []
+        },
+        {
+            "id": "unlock_street_cardboard",
+            "name": "解锁纸皮箱",
+            "description": "街道低概率出现纸皮箱。",
+            "type": "unlock_drop",
+            "cost": 120,
+            "unlock_drop_id": "street_cardboard_box",
+            "requires": ["unlock_street_can"]
+        },
+        {
+            "id": "unlock_bar_beer",
+            "name": "解锁啤酒瓶子",
+            "description": "酒吧开始出现啤酒瓶子。",
+            "type": "unlock_drop",
+            "cost": 300,
+            "unlock_drop_id": "bar_beer_bottle",
+            "requires": []
+        },
+        {
+            "id": "unlock_bar_wine",
+            "name": "解锁红酒瓶子",
+            "description": "酒吧开始出现红酒瓶子。",
+            "type": "unlock_drop",
+            "cost": 800,
+            "unlock_drop_id": "bar_wine_bottle",
+            "requires": ["unlock_bar_beer"]
+        },
+        {
+            "id": "unlock_bar_baijiu",
+            "name": "解锁白酒瓶子",
+            "description": "酒吧低概率出现白酒瓶子。",
+            "type": "unlock_drop",
+            "cost": 1800,
+            "unlock_drop_id": "bar_baijiu_bottle",
+            "requires": ["unlock_bar_wine"]
+        }
+    ]
+}

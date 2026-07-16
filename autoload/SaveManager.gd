@@ -1,7 +1,7 @@
 extends Node
 ## Handles load/save of GameState to user://.
 
-const LATEST_VERSION: int = 2
+const LATEST_VERSION: int = 3
 
 var autosave_interval: float = 15.0
 var _timer: float = 0.0
@@ -31,7 +31,6 @@ func save_game() -> void:
     dict["save_version"] = LATEST_VERSION
     if not PlatformBridge.write_save_text(JSON.stringify(dict, "\t")):
         return
-    EventBus.save_written.emit()
 
 
 func load_game() -> bool:

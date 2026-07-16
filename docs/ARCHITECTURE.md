@@ -7,25 +7,22 @@
 ## Autoload
 
 - `EventBus`：全局信号总线，系统和 UI 只通过信号沟通。
-- `ConfigDB`：启动时读取 `data/generators.json` 和 `data/upgrades.json`。
-- `GameState`：保存资源、生产器等级、升级等级、派生倍率。
+- `ConfigDB`：启动时读取场景和产物解锁升级配置。
+- `GameState`：保存资源、当前场景、升级等级和已解锁产物。
 - `PlatformBridge`：平台边界层，集中判断 PC / Web / 移动端 / 小游戏壳，并提供存档读写入口。
 - `SaveManager`：负责存档加载、自动保存和版本迁移入口，具体读写交给 `PlatformBridge`。
 - `AudioManager`：音频接口桩，后续接入音效时不用改业务代码。
 
 ## Systems
 
-- `ProductionSystem`：处理点击瓶子和每秒自动捡瓶收益。
-- `GeneratorSystem`：购买自动捡瓶帮手。
-- `UpgradeSystem`：购买升级并触发属性重算。
+- `ProductionSystem`：处理玩家点击产物后的统一收益发放。
+- `UpgradeSystem`：购买产物解锁升级。
 
 ## UI
 
-- `HUD`：顶部现金、塑料瓶、每秒产出、保存/重置按钮。
-- `BottleSpawnArea`：中间瓶子生成区，负责刷出可点击的塑料瓶。
-- `GeneratorPanel`：底部帮手购买列表。
-- `UpgradePanel`：底部升级购买列表。
-- `ToastBar`：底部提示。
+- `HUD`：顶部现金、回收物数量和场景切换入口。
+- `BottleSpawnArea`：中间产物生成区，按当前场景和已解锁产物刷出可点击目标。
+- `UpgradePanel`：底部产物解锁升级列表。
 
 ## 后续扩展建议
 

@@ -1,0 +1,85 @@
+{
+    "default_scene_id": "street",
+    "scenes": [
+        {
+            "id": "street",
+            "name": "街道",
+            "background": "res://assets/street_pickup_bg_clean.png",
+            "spawn_interval_min": 0.65,
+            "spawn_interval_max": 1.25,
+            "max_on_screen": 9,
+            "drops": [
+                {
+                    "id": "street_plastic_bottle",
+                    "name": "塑料瓶",
+                    "type": "plastic",
+                    "weight": 70,
+                    "reward_count": 1,
+                    "cash": 1,
+                    "default_unlocked": true,
+                    "sprite": "res://assets/items/street_plastic_bottle.svg"
+                },
+                {
+                    "id": "street_can",
+                    "name": "易拉罐",
+                    "type": "metal",
+                    "weight": 25,
+                    "reward_count": 1,
+                    "cash": 2,
+                    "default_unlocked": false,
+                    "sprite": "res://assets/items/street_can.svg"
+                },
+                {
+                    "id": "street_cardboard_box",
+                    "name": "纸皮箱",
+                    "type": "paper",
+                    "weight": 5,
+                    "reward_count": 1,
+                    "cash": 5,
+                    "default_unlocked": false,
+                    "sprite": "res://assets/items/street_cardboard_box.svg"
+                }
+            ]
+        },
+        {
+            "id": "bar",
+            "name": "酒吧",
+            "background": "res://assets/scenes/bar_bg.svg",
+            "spawn_interval_min": 0.75,
+            "spawn_interval_max": 1.35,
+            "max_on_screen": 8,
+            "drops": [
+                {
+                    "id": "bar_beer_bottle",
+                    "name": "啤酒瓶子",
+                    "type": "glass",
+                    "weight": 60,
+                    "reward_count": 1,
+                    "cash": 3,
+                    "default_unlocked": false,
+                    "sprite": "res://assets/items/bar_beer_bottle.svg"
+                },
+                {
+                    "id": "bar_wine_bottle",
+                    "name": "红酒瓶子",
+                    "type": "glass",
+                    "weight": 30,
+                    "reward_count": 1,
+                    "cash": 8,
+                    "default_unlocked": false,
+                    "sprite": "res://assets/items/bar_wine_bottle.svg"
+                },
+                {
+                    "id": "bar_baijiu_bottle",
+                    "name": "白酒瓶子",
+                    "type": "glass",
+                    "weight": 10,
+                    "reward_count": 1,
+                    "cash": 15,
+                    "default_unlocked": false,
+                    "sprite": "res://assets/items/bar_baijiu_bottle.svg"
+                }
+            ]
+        }
+    ]
+}
