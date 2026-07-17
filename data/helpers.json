@@ -1,0 +1,37 @@
+{
+    "helpers": [
+        {
+            "id": "helper_neighbor",
+            "name": "热心邻居",
+            "description": "在街道慢慢帮你收集基础回收物。",
+            "cost": 80,
+            "speed": 80,
+            "collect_radius": 24,
+            "collect_cooldown": 1.2,
+            "scenes": ["street"],
+            "preferred_types": ["plastic"]
+        },
+        {
+            "id": "helper_cart",
+            "name": "小推车阿姨",
+            "description": "在街道更快地收集塑料、金属和纸类。",
+            "cost": 350,
+            "speed": 110,
+            "collect_radius": 28,
+            "collect_cooldown": 0.9,
+            "scenes": ["street"],
+            "preferred_types": ["plastic", "metal", "paper"]
+        },
+        {
+            "id": "helper_bar_staff",
+            "name": "酒吧清洁员",
+            "description": "在酒吧帮你收集玻璃瓶。",
+            "cost": 1200,
+            "speed": 120,
+            "collect_radius": 28,
+            "collect_cooldown": 0.8,
+            "scenes": ["bar"],
+            "preferred_types": ["glass"]
+        }
+    ]
+}

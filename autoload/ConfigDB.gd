@@ -5,6 +5,8 @@ const DATA_DIR: String = "res://data/"
 
 var upgrades: Array = []
 var upgrades_by_id: Dictionary = {}
+var helpers: Array = []
+var helpers_by_id: Dictionary = {}
 var scenes: Array = []
 var scenes_by_id: Dictionary = {}
 var drops_by_id: Dictionary = {}
@@ -14,6 +16,7 @@ var default_scene_id: String = "street"
 func _ready() -> void:
     var t0: int = Time.get_ticks_msec()
     _load_upgrades()
+    _load_helpers()
     _load_scenes()
     print("[ConfigDB] loaded in %d ms" % (Time.get_ticks_msec() - t0))
 
@@ -33,6 +36,20 @@ func _load_upgrades() -> void:
     upgrades.clear()
     upgrades_by_id.clear()
     _append_upgrades(DATA_DIR + "upgrades_unlocks.json")
+
+
+func _load_helpers() -> void:
+    var data = _read_json(DATA_DIR + "helpers.json")
+    if data == null:
+        return
+    helpers.clear()
+    helpers_by_id.clear()
+    for row in data.get("helpers", []):
+        var id: String = String(row.get("id", ""))
+        if id.is_empty():
+            continue
+        helpers.append(row)
+        helpers_by_id[id] = row
 
 
 func _append_upgrades(path: String) -> void:
@@ -64,6 +81,7 @@ func _load_scenes() -> void:
             var drop_id: String = String(drop.get("id", ""))
             if drop_id.is_empty():
                 continue
+            drop["scene_id"] = id
             drops_by_id[drop_id] = drop
 
 
@@ -84,6 +102,14 @@ func get_upgrade_cost(upgrade_id, target_level: int) -> float:
     var base: float = float(row.get("cost_base", 0.0))
     var growth: float = float(row.get("cost_growth", 1.0))
     return base * pow(growth, maxi(target_level - 1, 0))
+
+
+func get_helpers() -> Array:
+    return helpers
+
+
+func get_helper(helper_id: String) -> Dictionary:
+    return helpers_by_id.get(helper_id, {})
 
 
 func get_scenes() -> Array:
@@ -109,6 +135,23 @@ func get_next_scene_id(scene_id: String) -> String:
         if String(scenes[i].get("id", "")) == scene_id:
             return String(scenes[(i + 1) % scenes.size()].get("id", default_scene_id))
     return String(scenes[0].get("id", default_scene_id))
+
+
+func get_scene_id_at_offset(scene_id: String, offset: int) -> String:
+    var index: int = get_scene_index(scene_id)
+    if index < 0:
+        return ""
+    var target_index: int = index + offset
+    if target_index < 0 or target_index >= scenes.size():
+        return ""
+    return String(scenes[target_index].get("id", ""))
+
+
+func get_scene_index(scene_id: String) -> int:
+    for i in range(scenes.size()):
+        if String(scenes[i].get("id", "")) == scene_id:
+            return i
+    return -1
 
 
 func get_scene_drops(scene_id: String) -> Array:

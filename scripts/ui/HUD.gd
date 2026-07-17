@@ -9,6 +9,8 @@ var top_panel: PanelContainer
 var challenge_panel: PanelContainer
 var challenge_title_label: Label
 var challenge_subtitle_label: Label
+var left_scene_button: Button
+var right_scene_button: Button
 
 
 func _ready() -> void:
@@ -42,7 +44,6 @@ func _build() -> void:
 
 	challenge_panel = PanelContainer.new()
 	challenge_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	challenge_panel.gui_input.connect(_on_scene_switch_input)
 	add_child(challenge_panel)
 
 	var challenge_box: VBoxContainer = VBoxContainer.new()
@@ -56,6 +57,18 @@ func _build() -> void:
 	challenge_subtitle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	challenge_box.add_child(challenge_subtitle_label)
 
+	left_scene_button = Button.new()
+	left_scene_button.text = "<"
+	left_scene_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	left_scene_button.pressed.connect(_on_left_scene_pressed)
+	add_child(left_scene_button)
+
+	right_scene_button = Button.new()
+	right_scene_button.text = ">"
+	right_scene_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	right_scene_button.pressed.connect(_on_right_scene_pressed)
+	add_child(right_scene_button)
+
 
 func _refresh() -> void:
 	cash_label.text = "现金 %s" % BigNumber.format(GameState.currency)
@@ -63,9 +76,12 @@ func _refresh() -> void:
 
 
 func _refresh_scene() -> void:
-	var next_scene_id: String = ConfigDB.get_next_scene_id(GameState.current_scene_id)
 	challenge_title_label.text = ConfigDB.get_scene_name(GameState.current_scene_id)
-	challenge_subtitle_label.text = "点击切换到%s" % ConfigDB.get_scene_name(next_scene_id)
+	challenge_subtitle_label.text = "当前场景"
+	if left_scene_button != null:
+		left_scene_button.disabled = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, -1).is_empty()
+	if right_scene_button != null:
+		right_scene_button.disabled = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, 1).is_empty()
 
 
 func _on_currency_changed(_new_amount: float, _delta: float) -> void:
@@ -80,14 +96,12 @@ func _on_scene_changed(_scene_id: String) -> void:
 	_refresh_scene()
 
 
-func _on_scene_switch_input(event: InputEvent) -> void:
-	var pressed: bool = false
-	if event is InputEventMouseButton:
-		pressed = event.pressed and event.button_index == MOUSE_BUTTON_LEFT
-	elif event is InputEventScreenTouch:
-		pressed = event.pressed
-	if pressed:
-		GameState.cycle_scene()
+func _on_left_scene_pressed() -> void:
+	GameState.switch_scene_by_offset(-1)
+
+
+func _on_right_scene_pressed() -> void:
+	GameState.switch_scene_by_offset(1)
 
 
 func apply_layout(viewport_size: Vector2) -> void:
@@ -105,13 +119,31 @@ func apply_layout(viewport_size: Vector2) -> void:
 	_set_label_color(cash_label, Color(0.98, 1.0, 0.9, 1.0))
 	_set_label_color(bottle_label, Color(0.85, 0.96, 1.0, 1.0))
 
-	challenge_panel.position = Vector2(84.0 * scale, 62.0 * scale)
-	challenge_panel.size = Vector2(222.0 * scale, 58.0 * scale)
+	var scene_panel_width: float = minf(222.0 * scale, viewport_size.x - 112.0 * scale)
+	var scene_button_size: Vector2 = Vector2(34.0 * scale, 50.0 * scale)
+	var scene_group_width: float = scene_button_size.x * 2.0 + scene_panel_width + 14.0 * scale
+	var scene_group_left: float = maxf(margin, (viewport_size.x - scene_group_width) * 0.5)
+	var scene_top: float = 62.0 * scale
+
+	left_scene_button.position = Vector2(scene_group_left, scene_top + 4.0 * scale)
+	left_scene_button.size = scene_button_size
+	left_scene_button.add_theme_font_size_override("font_size", int(18.0 * scale))
+	left_scene_button.add_theme_stylebox_override("normal", _rounded_style(Color(0.2, 0.19, 0.28, 0.9), Color(1.0, 0.8, 0.28, 0.85), 2.0, 10.0, scale))
+	left_scene_button.add_theme_stylebox_override("disabled", _rounded_style(Color(0.18, 0.18, 0.2, 0.38), Color(0.6, 0.6, 0.6, 0.4), 1.0, 10.0, scale))
+
+	challenge_panel.position = Vector2(scene_group_left + scene_button_size.x + 7.0 * scale, scene_top)
+	challenge_panel.size = Vector2(scene_panel_width, 58.0 * scale)
 	challenge_panel.add_theme_stylebox_override("panel", _rounded_style(Color(0.2, 0.19, 0.28, 0.92), Color(1.0, 0.8, 0.28, 1.0), 3.0, 13.0, scale))
 	challenge_title_label.add_theme_font_size_override("font_size", int(19.0 * scale))
 	challenge_subtitle_label.add_theme_font_size_override("font_size", int(11.0 * scale))
 	_set_label_color(challenge_title_label, Color(1.0, 0.97, 0.75, 1.0))
 	_set_label_color(challenge_subtitle_label, Color(0.82, 0.95, 1.0, 1.0))
+
+	right_scene_button.position = Vector2(challenge_panel.position.x + scene_panel_width + 7.0 * scale, scene_top + 4.0 * scale)
+	right_scene_button.size = scene_button_size
+	right_scene_button.add_theme_font_size_override("font_size", int(18.0 * scale))
+	right_scene_button.add_theme_stylebox_override("normal", _rounded_style(Color(0.2, 0.19, 0.28, 0.9), Color(1.0, 0.8, 0.28, 0.85), 2.0, 10.0, scale))
+	right_scene_button.add_theme_stylebox_override("disabled", _rounded_style(Color(0.18, 0.18, 0.2, 0.38), Color(0.6, 0.6, 0.6, 0.4), 1.0, 10.0, scale))
 
 
 func _ui_scale(viewport_size: Vector2) -> float:

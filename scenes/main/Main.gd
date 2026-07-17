@@ -6,7 +6,7 @@ const BASE_LOGICAL_WIDTH: float = 393.0
 const MARGIN_PT: float = 16.0
 const TOP_HEIGHT_PT: float = 122.0
 const BOTTLE_TOP_PT: float = 0.0
-const BOTTOM_PANEL_HEIGHT_PT: float = 218.0
+const BOTTOM_PANEL_HEIGHT_PT: float = 238.0
 
 
 func _ready() -> void:

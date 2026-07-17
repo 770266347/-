@@ -8,6 +8,7 @@ signal bottle_collected(bottle_amount: int, cash_amount: float, screen_pos: Vect
 signal drop_collected(drop_name: String, amount: int, cash_amount: float, screen_pos: Vector2)
 signal upgrade_purchased(upgrade_id, new_level: int)
 signal upgrade_maxed(upgrade_id)
+signal helper_purchased(helper_id: String)
 signal scene_changed(scene_id: String)
 signal unlocked_drops_changed()
 

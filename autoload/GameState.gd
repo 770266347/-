@@ -1,7 +1,7 @@
 extends Node
 ## Runtime mutable player state. Persisted by SaveManager.
 
-const SAVE_VERSION: int = 3
+const SAVE_VERSION: int = 4
 const BASE_BOTTLE_VALUE: float = 1.0
 
 var save_version: int = SAVE_VERSION
@@ -15,6 +15,8 @@ var current_scene_id: String = "street"
 var upgrades: Dictionary = {}
 ## drop_id -> true
 var unlocked_drops: Dictionary = {}
+## helper_id -> true
+var purchased_helpers: Dictionary = {}
 
 
 func reset_to_default() -> void:
@@ -26,6 +28,7 @@ func reset_to_default() -> void:
     current_scene_id = ConfigDB.get_default_scene_id()
     upgrades.clear()
     unlocked_drops = _drop_set(ConfigDB.get_default_unlocked_drops())
+    purchased_helpers.clear()
     EventBus.bottle_changed.emit(bottles, 0)
     EventBus.currency_changed.emit(currency, 0.0)
     EventBus.scene_changed.emit(current_scene_id)
@@ -91,6 +94,13 @@ func cycle_scene() -> void:
     set_current_scene_id(ConfigDB.get_next_scene_id(current_scene_id))
 
 
+func switch_scene_by_offset(offset: int) -> bool:
+    var scene_id: String = ConfigDB.get_scene_id_at_offset(current_scene_id, offset)
+    if scene_id.is_empty():
+        return false
+    return set_current_scene_id(scene_id)
+
+
 func is_drop_unlocked(drop_id: String) -> bool:
     return bool(unlocked_drops.get(drop_id, false))
 
@@ -109,6 +119,20 @@ func get_unlocked_drop_ids() -> Array:
     return unlocked_drops.keys()
 
 
+func has_helper(helper_id: String) -> bool:
+    return bool(purchased_helpers.get(helper_id, false))
+
+
+func purchase_helper(helper_id: String) -> bool:
+    if helper_id.is_empty() or ConfigDB.get_helper(helper_id).is_empty():
+        return false
+    if has_helper(helper_id):
+        return false
+    purchased_helpers[helper_id] = true
+    EventBus.helper_purchased.emit(helper_id)
+    return true
+
+
 func to_dict() -> Dictionary:
     return {
         "save_version": save_version,
@@ -119,6 +143,7 @@ func to_dict() -> Dictionary:
         "current_scene_id": current_scene_id,
         "upgrades": upgrades,
         "unlocked_drops": unlocked_drops,
+        "purchased_helpers": purchased_helpers,
     }
 
 
@@ -133,6 +158,7 @@ func from_dict(d: Dictionary) -> void:
         current_scene_id = ConfigDB.get_default_scene_id()
     upgrades = _mixed_key_level_dict(d.get("upgrades", {}))
     unlocked_drops = _bool_key_dict(d.get("unlocked_drops", {}))
+    purchased_helpers = _bool_key_dict(d.get("purchased_helpers", {}))
     _merge_default_unlocked_drops()
     EventBus.bottle_changed.emit(bottles, 0)
     EventBus.currency_changed.emit(currency, 0.0)

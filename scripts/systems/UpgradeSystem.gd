@@ -1,6 +1,6 @@
 class_name UpgradeSystem
 extends Node
-## Purchases permanent upgrades and drop unlocks.
+## Purchases permanent upgrades and helpers.
 
 
 func can_buy(upgrade_id) -> bool:
@@ -44,9 +44,27 @@ func is_maxed(upgrade_id) -> bool:
     return GameState.get_upgrade_level(upgrade_id) >= int(row.get("max_level", 1))
 
 
+func can_buy_helper(helper_id: String) -> bool:
+    var row: Dictionary = ConfigDB.get_helper(helper_id)
+    if row.is_empty() or GameState.has_helper(helper_id):
+        return false
+    return GameState.can_afford(float(row.get("cost", INF)))
+
+
+func buy_helper(helper_id: String) -> bool:
+    if not can_buy_helper(helper_id):
+        return false
+    var row: Dictionary = ConfigDB.get_helper(helper_id)
+    if not GameState.spend_currency(float(row.get("cost", INF))):
+        return false
+    if not GameState.purchase_helper(helper_id):
+        return false
+    AudioManager.play_sfx("cash")
+    return true
+
+
 func _requirements_met(row: Dictionary) -> bool:
     for required_upgrade_id in row.get("requires", []):
         if GameState.get_upgrade_level(required_upgrade_id) <= 0:
             return false
     return true
-
