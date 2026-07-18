@@ -1,13 +1,15 @@
 extends Control
-## Bottom panel: compact price-upgrade and helper purchase tabs.
+## Bottom panel: compact upgrade, scene unlock, and helper purchase tabs.
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 const TAB_PRICE: String = "price"
+const TAB_SCENE: String = "scene"
 const TAB_HELPER: String = "helper"
 
 var panel_container: PanelContainer
 var tab_bar: HBoxContainer
 var price_tab_button: Button
+var scene_tab_button: Button
 var helper_tab_button: Button
 var list: VBoxContainer
 var _selected_tab: String = TAB_PRICE
@@ -18,6 +20,7 @@ func _ready() -> void:
 	EventBus.currency_changed.connect(func(_a: float, _d: float): _refresh())
 	EventBus.upgrade_purchased.connect(func(_id, _lv: int): _refresh())
 	EventBus.unlocked_drops_changed.connect(func(): _refresh())
+	EventBus.scene_unlocked.connect(func(_id: String): _refresh())
 	EventBus.helper_purchased.connect(func(_id: String): _refresh())
 	EventBus.scene_changed.connect(func(_id: String): _refresh())
 	_refresh()
@@ -41,6 +44,12 @@ func _build() -> void:
 	price_tab_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	price_tab_button.pressed.connect(func(): _select_tab(TAB_PRICE))
 	tab_bar.add_child(price_tab_button)
+
+	scene_tab_button = Button.new()
+	scene_tab_button.text = "场景"
+	scene_tab_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scene_tab_button.pressed.connect(func(): _select_tab(TAB_SCENE))
+	tab_bar.add_child(scene_tab_button)
 
 	helper_tab_button = Button.new()
 	helper_tab_button.text = "帮手"
@@ -70,6 +79,8 @@ func _refresh() -> void:
 	_clear_list()
 	_refresh_tabs()
 	match _selected_tab:
+		TAB_SCENE:
+			_build_scene_buttons()
 		TAB_HELPER:
 			_build_helper_buttons()
 		_:
@@ -80,6 +91,15 @@ func _refresh() -> void:
 func _build_upgrade_buttons() -> void:
 	var rows: Array = _ordered_upgrades()
 	for row in rows:
+		var id = row.get("id", "")
+		var btn: Button = _make_list_button(_upgrade_button_text(row))
+		btn.disabled = _upgrade_system() == null or not _upgrade_system().can_buy(id)
+		btn.pressed.connect(_on_buy_upgrade_pressed.bind(id))
+		list.add_child(btn)
+
+
+func _build_scene_buttons() -> void:
+	for row in _scene_unlocks():
 		var id = row.get("id", "")
 		var btn: Button = _make_list_button(_upgrade_button_text(row))
 		btn.disabled = _upgrade_system() == null or not _upgrade_system().can_buy(id)
@@ -118,11 +138,10 @@ func _on_buy_helper_pressed(helper_id: String) -> void:
 
 
 func _upgrade_button_text(row: Dictionary) -> String:
-	var drop_id: String = String(row.get("unlock_drop_id", ""))
 	var cost: float = float(row.get("cost", 0.0))
 	var scene_name: String = ConfigDB.get_scene_name(_upgrade_scene_id(row))
 	var status: String = "%s 元" % BigNumber.format(cost)
-	if GameState.is_drop_unlocked(drop_id):
+	if _is_upgrade_target_unlocked(row):
 		status = "已解锁"
 	elif not _requirements_met(row):
 		status = "需 %s" % _requirement_names(row)
@@ -161,6 +180,8 @@ func _ordered_upgrades() -> Array:
 	var current: Array = []
 	var others: Array = []
 	for row in ConfigDB.get_upgrades():
+		if String(row.get("type", "")) == "unlock_scene":
+			continue
 		if _upgrade_scene_id(row) == GameState.current_scene_id:
 			current.append(row)
 		else:
@@ -168,9 +189,28 @@ func _ordered_upgrades() -> Array:
 	return current + others
 
 
+func _scene_unlocks() -> Array:
+	var out: Array = []
+	for row in ConfigDB.get_upgrades():
+		if String(row.get("type", "")) == "unlock_scene":
+			out.append(row)
+	return out
+
+
 func _upgrade_scene_id(row: Dictionary) -> String:
+	if String(row.get("type", "")) == "unlock_scene":
+		return String(row.get("unlock_scene_id", ""))
 	var drop: Dictionary = ConfigDB.get_drop(String(row.get("unlock_drop_id", "")))
 	return String(drop.get("scene_id", ""))
+
+
+func _is_upgrade_target_unlocked(row: Dictionary) -> bool:
+	match String(row.get("type", "")):
+		"unlock_drop":
+			return GameState.is_drop_unlocked(String(row.get("unlock_drop_id", "")))
+		"unlock_scene":
+			return GameState.is_scene_unlocked(String(row.get("unlock_scene_id", "")))
+	return false
 
 
 func _requirements_met(row: Dictionary) -> bool:
@@ -201,9 +241,10 @@ func _clear_list() -> void:
 
 
 func _refresh_tabs() -> void:
-	if price_tab_button == null or helper_tab_button == null:
+	if price_tab_button == null or scene_tab_button == null or helper_tab_button == null:
 		return
 	price_tab_button.disabled = _selected_tab == TAB_PRICE
+	scene_tab_button.disabled = _selected_tab == TAB_SCENE
 	helper_tab_button.disabled = _selected_tab == TAB_HELPER
 
 
@@ -219,6 +260,8 @@ func apply_layout(viewport_size: Vector2) -> void:
 		tab_bar.add_theme_constant_override("separation", int(5.0 * scale))
 	if price_tab_button != null:
 		_style_tab_button(price_tab_button, scale)
+	if scene_tab_button != null:
+		_style_tab_button(scene_tab_button, scale)
 	if helper_tab_button != null:
 		_style_tab_button(helper_tab_button, scale)
 	if list != null:

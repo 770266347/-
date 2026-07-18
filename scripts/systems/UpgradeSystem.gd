@@ -9,8 +9,13 @@ func can_buy(upgrade_id) -> bool:
         return false
     if not _requirements_met(row):
         return false
-    if String(row.get("type", "")) == "unlock_drop" and GameState.is_drop_unlocked(String(row.get("unlock_drop_id", ""))):
-        return false
+    match String(row.get("type", "")):
+        "unlock_drop":
+            if GameState.is_drop_unlocked(String(row.get("unlock_drop_id", ""))):
+                return false
+        "unlock_scene":
+            if GameState.is_scene_unlocked(String(row.get("unlock_scene_id", ""))):
+                return false
     var level: int = GameState.get_upgrade_level(upgrade_id)
     if level >= int(row.get("max_level", 1)):
         return false
@@ -25,9 +30,14 @@ func buy(upgrade_id) -> bool:
     if not GameState.spend_currency(cost):
         return false
     GameState.set_upgrade_level(upgrade_id, level + 1)
-    if String(ConfigDB.get_upgrade(upgrade_id).get("type", "")) == "unlock_drop":
-        var drop_id: String = String(ConfigDB.get_upgrade(upgrade_id).get("unlock_drop_id", ""))
-        GameState.unlock_drop(drop_id)
+    var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
+    match String(row.get("type", "")):
+        "unlock_drop":
+            GameState.unlock_drop(String(row.get("unlock_drop_id", "")))
+        "unlock_scene":
+            GameState.unlock_scene(String(row.get("unlock_scene_id", "")))
+            for drop_id in row.get("unlock_drop_ids", []):
+                GameState.unlock_drop(String(drop_id))
     EventBus.upgrade_purchased.emit(upgrade_id, level + 1)
     AudioManager.play_sfx("cash")
     if level + 1 >= int(ConfigDB.get_upgrade(upgrade_id).get("max_level", 1)):

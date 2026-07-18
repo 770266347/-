@@ -6,6 +6,7 @@ const BASE_LOGICAL_WIDTH: float = 393.0
 var cash_label: Label
 var bottle_label: Label
 var top_panel: PanelContainer
+var top_row: HBoxContainer
 var challenge_panel: PanelContainer
 var challenge_title_label: Label
 var challenge_subtitle_label: Label
@@ -19,6 +20,7 @@ func _ready() -> void:
 	EventBus.currency_changed.connect(_on_currency_changed)
 	EventBus.bottle_changed.connect(_on_bottle_changed)
 	EventBus.scene_changed.connect(_on_scene_changed)
+	EventBus.scene_unlocked.connect(func(_id: String): _refresh_scene())
 	_refresh()
 	_refresh_scene()
 	call_deferred("apply_layout", get_viewport_rect().size)
@@ -29,17 +31,25 @@ func _build() -> void:
 	top_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(top_panel)
 
-	var top_row: HBoxContainer = HBoxContainer.new()
+	top_row = HBoxContainer.new()
+	top_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	top_panel.add_child(top_row)
 
 	cash_label = Label.new()
 	cash_label.text = "现金 0"
 	cash_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cash_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cash_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cash_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	top_row.add_child(cash_label)
 
 	bottle_label = Label.new()
 	bottle_label.text = "回收物 0"
 	bottle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bottle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bottle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottle_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	top_row.add_child(bottle_label)
 
 	challenge_panel = PanelContainer.new()
@@ -77,11 +87,18 @@ func _refresh() -> void:
 
 func _refresh_scene() -> void:
 	challenge_title_label.text = ConfigDB.get_scene_name(GameState.current_scene_id)
-	challenge_subtitle_label.text = "当前场景"
+	challenge_subtitle_label.text = _scene_subtitle()
 	if left_scene_button != null:
-		left_scene_button.disabled = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, -1).is_empty()
+		left_scene_button.disabled = not GameState.can_switch_scene_by_offset(-1)
 	if right_scene_button != null:
-		right_scene_button.disabled = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, 1).is_empty()
+		right_scene_button.disabled = not GameState.can_switch_scene_by_offset(1)
+
+
+func _scene_subtitle() -> String:
+	var next_scene_id: String = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, 1)
+	if not next_scene_id.is_empty() and not GameState.is_scene_unlocked(next_scene_id):
+		return "%s未解锁" % ConfigDB.get_scene_name(next_scene_id)
+	return "当前场景"
 
 
 func _on_currency_changed(_new_amount: float, _delta: float) -> void:
@@ -112,8 +129,10 @@ func apply_layout(viewport_size: Vector2) -> void:
 	top_panel.size = Vector2(viewport_size.x - margin * 2.0, 42.0 * scale)
 	top_panel.add_theme_stylebox_override("panel", _rounded_style(Color(0.13, 0.15, 0.18, 0.78), Color(0.95, 0.78, 0.36, 0.9), 2.0, 15.0, scale))
 
-	cash_label.custom_minimum_size = Vector2((viewport_size.x - margin * 2.0) * 0.5, 30.0 * scale)
-	bottle_label.custom_minimum_size = Vector2((viewport_size.x - margin * 2.0) * 0.5, 30.0 * scale)
+	if top_row != null:
+		top_row.add_theme_constant_override("separation", 0)
+	cash_label.custom_minimum_size = Vector2(0.0, 30.0 * scale)
+	bottle_label.custom_minimum_size = Vector2(0.0, 30.0 * scale)
 	cash_label.add_theme_font_size_override("font_size", int(14.0 * scale))
 	bottle_label.add_theme_font_size_override("font_size", int(14.0 * scale))
 	_set_label_color(cash_label, Color(0.98, 1.0, 0.9, 1.0))

@@ -1,7 +1,7 @@
 extends Node
 ## Runtime mutable player state. Persisted by SaveManager.
 
-const SAVE_VERSION: int = 4
+const SAVE_VERSION: int = 5
 const BASE_BOTTLE_VALUE: float = 1.0
 
 var save_version: int = SAVE_VERSION
@@ -13,6 +13,8 @@ var current_scene_id: String = "street"
 
 ## upgrade_id -> level
 var upgrades: Dictionary = {}
+## scene_id -> true
+var unlocked_scenes: Dictionary = {}
 ## drop_id -> true
 var unlocked_drops: Dictionary = {}
 ## helper_id -> true
@@ -27,6 +29,7 @@ func reset_to_default() -> void:
     total_earned = 0.0
     current_scene_id = ConfigDB.get_default_scene_id()
     upgrades.clear()
+    unlocked_scenes = _scene_set(ConfigDB.get_default_unlocked_scenes())
     unlocked_drops = _drop_set(ConfigDB.get_default_unlocked_drops())
     purchased_helpers.clear()
     EventBus.bottle_changed.emit(bottles, 0)
@@ -83,6 +86,8 @@ func get_drop_cash_value(base_cash: float) -> float:
 func set_current_scene_id(scene_id: String) -> bool:
     if ConfigDB.get_scene(scene_id).is_empty():
         return false
+    if not is_scene_unlocked(scene_id):
+        return false
     if current_scene_id == scene_id:
         return true
     current_scene_id = scene_id
@@ -99,6 +104,31 @@ func switch_scene_by_offset(offset: int) -> bool:
     if scene_id.is_empty():
         return false
     return set_current_scene_id(scene_id)
+
+
+func can_switch_scene_by_offset(offset: int) -> bool:
+    var scene_id: String = ConfigDB.get_scene_id_at_offset(current_scene_id, offset)
+    return not scene_id.is_empty() and is_scene_unlocked(scene_id)
+
+
+func is_scene_unlocked(scene_id: String) -> bool:
+    return bool(unlocked_scenes.get(scene_id, false))
+
+
+func unlock_scene(scene_id: String) -> bool:
+    if scene_id.is_empty() or ConfigDB.get_scene(scene_id).is_empty():
+        return false
+    if is_scene_unlocked(scene_id):
+        return false
+    unlocked_scenes[scene_id] = true
+    for drop_id in ConfigDB.get_scene_unlock_drop_ids(scene_id):
+        unlock_drop(String(drop_id))
+    EventBus.scene_unlocked.emit(scene_id)
+    return true
+
+
+func get_unlocked_scene_ids() -> Array:
+    return unlocked_scenes.keys()
 
 
 func is_drop_unlocked(drop_id: String) -> bool:
@@ -142,6 +172,7 @@ func to_dict() -> Dictionary:
         "total_earned": total_earned,
         "current_scene_id": current_scene_id,
         "upgrades": upgrades,
+        "unlocked_scenes": unlocked_scenes,
         "unlocked_drops": unlocked_drops,
         "purchased_helpers": purchased_helpers,
     }
@@ -157,9 +188,14 @@ func from_dict(d: Dictionary) -> void:
     if ConfigDB.get_scene(current_scene_id).is_empty():
         current_scene_id = ConfigDB.get_default_scene_id()
     upgrades = _mixed_key_level_dict(d.get("upgrades", {}))
+    unlocked_scenes = _bool_key_dict(d.get("unlocked_scenes", {}))
     unlocked_drops = _bool_key_dict(d.get("unlocked_drops", {}))
     purchased_helpers = _bool_key_dict(d.get("purchased_helpers", {}))
+    _merge_default_unlocked_scenes()
     _merge_default_unlocked_drops()
+    _apply_unlock_upgrades_to_state()
+    if not is_scene_unlocked(current_scene_id):
+        current_scene_id = ConfigDB.get_default_scene_id()
     EventBus.bottle_changed.emit(bottles, 0)
     EventBus.currency_changed.emit(currency, 0.0)
     EventBus.scene_changed.emit(current_scene_id)
@@ -190,6 +226,43 @@ static func _drop_set(drop_ids: Array) -> Dictionary:
     return out
 
 
+static func _scene_set(scene_ids: Array) -> Dictionary:
+    var out: Dictionary = {}
+    for scene_id in scene_ids:
+        out[String(scene_id)] = true
+    return out
+
+
+func _merge_default_unlocked_scenes() -> void:
+    for scene_id in ConfigDB.get_default_unlocked_scenes():
+        unlocked_scenes[String(scene_id)] = true
+
+
 func _merge_default_unlocked_drops() -> void:
     for drop_id in ConfigDB.get_default_unlocked_drops():
         unlocked_drops[String(drop_id)] = true
+
+
+func _apply_unlock_upgrades_to_state() -> void:
+    if int(upgrades.get("unlock_bar_beer", 0)) > 0 and int(upgrades.get("unlock_bar_scene", 0)) <= 0:
+        upgrades["unlock_bar_scene"] = 1
+
+    for upgrade_id in upgrades.keys():
+        if int(upgrades.get(upgrade_id, 0)) <= 0:
+            continue
+        var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
+        if row.is_empty():
+            continue
+        match String(row.get("type", "")):
+            "unlock_drop":
+                var drop_id: String = String(row.get("unlock_drop_id", ""))
+                if not drop_id.is_empty() and not ConfigDB.get_drop(drop_id).is_empty():
+                    unlocked_drops[drop_id] = true
+            "unlock_scene":
+                var scene_id: String = String(row.get("unlock_scene_id", ""))
+                if not scene_id.is_empty() and not ConfigDB.get_scene(scene_id).is_empty():
+                    unlocked_scenes[scene_id] = true
+                for drop_id in row.get("unlock_drop_ids", []):
+                    var id: String = String(drop_id)
+                    if not id.is_empty() and not ConfigDB.get_drop(id).is_empty():
+                        unlocked_drops[id] = true

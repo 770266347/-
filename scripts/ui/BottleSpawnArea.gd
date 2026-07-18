@@ -5,9 +5,12 @@ extends Control
 const FALLBACK_TEXTURE: Texture2D = preload("res://assets/bottle.svg")
 const BASE_LOGICAL_WIDTH: float = 393.0
 const DROP_SIZE_PT: Vector2 = Vector2(34.0, 50.0)
+const HELPER_SIZE_PT: Vector2 = Vector2(38.0, 48.0)
 const SPAWN_MARGIN_PT: float = 18.0
 const TOP_RESERVED_PT: float = 118.0
 const GLOW_SCALE: float = 1.16
+const HELPER_WANDER_MARGIN_PT: float = 28.0
+const HELPER_WANDER_ARRIVE_PT: float = 8.0
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _spawn_timer: float = 0.0
@@ -25,6 +28,7 @@ func _ready() -> void:
 	EventBus.drop_collected.connect(_on_drop_collected)
 	EventBus.scene_changed.connect(_on_scene_changed)
 	EventBus.unlocked_drops_changed.connect(_on_unlocked_drops_changed)
+	EventBus.helper_purchased.connect(_on_helper_purchased)
 	_reset_spawn_timer(0.1)
 	set_process(true)
 
@@ -32,6 +36,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
+	_update_helpers(delta)
 	_spawn_timer -= delta
 	if _spawn_timer > 0.0:
 		return
@@ -78,6 +83,7 @@ func _apply_scene() -> void:
 		_background.texture = texture
 	_empty_label.text = "%s暂无可收集物\n先去升级解锁" % ConfigDB.get_scene_name(GameState.current_scene_id)
 	_clear_active_drops()
+	_refresh_helpers()
 	_update_empty_state(_get_available_drops())
 
 
@@ -149,12 +155,22 @@ func _on_drop_gui_input(event: InputEvent, item: TextureRect) -> void:
 	if not pressed or bool(item.get_meta("collected", false)):
 		return
 
+	_collect_drop_item(item)
+
+
+func _collect_drop_item(item: TextureRect) -> bool:
+	if item == null or not is_instance_valid(item):
+		return false
+	if bool(item.get_meta("collected", false)):
+		return false
+
 	item.set_meta("collected", true)
 	var drop: Dictionary = item.get_meta("drop", {})
 	var system: ProductionSystem = get_tree().root.get_node_or_null("Main/Systems/ProductionSystem") as ProductionSystem
 	if system != null:
 		system.collect_drop(drop, item.global_position + item.size * 0.5)
 	_despawn_drop(item)
+	return true
 
 
 func _despawn_drop(item: TextureRect) -> void:
@@ -186,6 +202,7 @@ func _clear_active_drops() -> void:
 			continue
 		if bool(control.get_meta("is_drop", false)) or bool(control.get_meta("is_drop_glow", false)):
 			control.queue_free()
+	_reset_helper_targets()
 
 
 func _reset_spawn_timer(first_delay: float = -1.0) -> void:
@@ -227,6 +244,205 @@ func _on_scene_changed(_scene_id: String) -> void:
 func _on_unlocked_drops_changed() -> void:
 	_update_empty_state(_get_available_drops())
 	_reset_spawn_timer(0.1)
+
+
+func _on_helper_purchased(_helper_id: String) -> void:
+	_refresh_helpers()
+
+
+func _refresh_helpers() -> void:
+	var wanted_ids: Dictionary = {}
+	var spawn_index: int = 0
+	for row in ConfigDB.get_helpers():
+		var helper_id: String = String(row.get("id", ""))
+		if helper_id.is_empty() or not GameState.has_helper(helper_id):
+			continue
+		if not _helper_can_work_here(row):
+			continue
+		wanted_ids[helper_id] = true
+		if _get_helper_node(helper_id) == null:
+			_spawn_helper(row, spawn_index)
+		spawn_index += 1
+
+	for child in get_children():
+		var helper: TextureRect = child as TextureRect
+		if helper == null or not bool(helper.get_meta("is_helper", false)):
+			continue
+		var helper_id: String = String(helper.get_meta("helper_id", ""))
+		if not wanted_ids.has(helper_id):
+			helper.queue_free()
+
+
+func _spawn_helper(row: Dictionary, spawn_index: int) -> void:
+	var helper: TextureRect = TextureRect.new()
+	var texture: Texture2D = load(String(row.get("sprite", ""))) as Texture2D
+	if texture != null:
+		helper.texture = texture
+	else:
+		helper.texture = FALLBACK_TEXTURE
+	helper.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	helper.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	helper.size = _helper_size()
+	helper.pivot_offset = helper.size * 0.5
+	helper.position = _helper_spawn_position(spawn_index)
+	helper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	helper.z_index = 4
+	helper.set_meta("is_helper", true)
+	helper.set_meta("helper_id", String(row.get("id", "")))
+	helper.set_meta("config", row)
+	helper.set_meta("target", null)
+	helper.set_meta("wander_target", _random_helper_center_position())
+	helper.set_meta("cooldown_remaining", 0.0)
+	add_child(helper)
+
+	helper.modulate.a = 0.0
+	helper.scale = Vector2(0.86, 0.86)
+	var tween: Tween = create_tween()
+	tween.tween_property(helper, "modulate:a", 1.0, 0.18)
+	tween.parallel().tween_property(helper, "scale", Vector2.ONE, 0.18)
+
+
+func _update_helpers(delta: float) -> void:
+	for child in get_children():
+		var helper: TextureRect = child as TextureRect
+		if helper == null or not bool(helper.get_meta("is_helper", false)):
+			continue
+		_update_helper(helper, delta)
+
+
+func _update_helper(helper: TextureRect, delta: float) -> void:
+	var row: Dictionary = helper.get_meta("config", {})
+	if row.is_empty() or not _helper_can_work_here(row):
+		return
+
+	var cooldown_remaining: float = maxf(0.0, float(helper.get_meta("cooldown_remaining", 0.0)) - delta)
+	helper.set_meta("cooldown_remaining", cooldown_remaining)
+
+	var target: TextureRect = helper.get_meta("target", null) as TextureRect
+	if not _is_valid_helper_target(target, row):
+		target = _find_helper_target(helper, row)
+		helper.set_meta("target", target)
+
+	if target == null:
+		_update_helper_wander(helper, row, delta)
+		return
+
+	var target_center: Vector2 = target.position + target.size * 0.5
+	_move_helper_toward(helper, target_center, float(row.get("speed", 80.0)), delta)
+	if _helper_distance_to(helper, target_center) > float(row.get("collect_radius", 24.0)) * _ui_scale():
+		return
+	if cooldown_remaining > 0.0:
+		return
+
+	if _collect_drop_item(target):
+		helper.set_meta("cooldown_remaining", float(row.get("collect_cooldown", 1.0)))
+		helper.set_meta("target", null)
+
+
+func _update_helper_wander(helper: TextureRect, row: Dictionary, delta: float) -> void:
+	if not helper.has_meta("wander_target"):
+		helper.set_meta("wander_target", _random_helper_center_position())
+	var wander_target: Vector2 = helper.get_meta("wander_target")
+	if _helper_distance_to(helper, wander_target) <= HELPER_WANDER_ARRIVE_PT * _ui_scale():
+		wander_target = _random_helper_center_position()
+		helper.set_meta("wander_target", wander_target)
+	_move_helper_toward(helper, wander_target, float(row.get("speed", 80.0)) * 0.45, delta)
+
+
+func _find_helper_target(helper: TextureRect, row: Dictionary) -> TextureRect:
+	var preferred_types: Array = row.get("preferred_types", [])
+	var best_target: TextureRect = null
+	var best_distance: float = INF
+	var helper_center: Vector2 = helper.position + helper.size * 0.5
+	for child in get_children():
+		var item: TextureRect = child as TextureRect
+		if item == null or not _is_valid_helper_target(item, row):
+			continue
+		var drop: Dictionary = item.get_meta("drop", {})
+		var drop_type: String = String(drop.get("type", ""))
+		if not preferred_types.is_empty() and not preferred_types.has(drop_type):
+			continue
+		var distance: float = helper_center.distance_to(item.position + item.size * 0.5)
+		if distance < best_distance:
+			best_distance = distance
+			best_target = item
+	return best_target
+
+
+func _is_valid_helper_target(item: TextureRect, row: Dictionary) -> bool:
+	if item == null or not is_instance_valid(item):
+		return false
+	if not bool(item.get_meta("is_drop", false)) or bool(item.get_meta("collected", false)):
+		return false
+	var drop: Dictionary = item.get_meta("drop", {})
+	if String(drop.get("scene_id", GameState.current_scene_id)) != GameState.current_scene_id:
+		return false
+	var preferred_types: Array = row.get("preferred_types", [])
+	return preferred_types.is_empty() or preferred_types.has(String(drop.get("type", "")))
+
+
+func _move_helper_toward(helper: TextureRect, target_center: Vector2, speed_pt: float, delta: float) -> void:
+	var helper_center: Vector2 = helper.position + helper.size * 0.5
+	var offset: Vector2 = target_center - helper_center
+	var distance: float = offset.length()
+	if distance <= 0.1:
+		return
+	var step: float = minf(distance, speed_pt * _ui_scale() * delta)
+	var next_center: Vector2 = helper_center + offset.normalized() * step
+	helper.position = _clamp_helper_position(next_center - helper.size * 0.5)
+	helper.flip_h = offset.x < 0.0
+
+
+func _helper_distance_to(helper: TextureRect, target_center: Vector2) -> float:
+	return (helper.position + helper.size * 0.5).distance_to(target_center)
+
+
+func _helper_can_work_here(row: Dictionary) -> bool:
+	var scene_ids: Array = row.get("scenes", [])
+	return scene_ids.is_empty() or scene_ids.has(GameState.current_scene_id)
+
+
+func _get_helper_node(helper_id: String) -> TextureRect:
+	for child in get_children():
+		var helper: TextureRect = child as TextureRect
+		if helper != null and bool(helper.get_meta("is_helper", false)) and String(helper.get_meta("helper_id", "")) == helper_id:
+			return helper
+	return null
+
+
+func _reset_helper_targets() -> void:
+	for child in get_children():
+		var helper: TextureRect = child as TextureRect
+		if helper != null and bool(helper.get_meta("is_helper", false)):
+			helper.set_meta("target", null)
+			helper.set_meta("wander_target", _random_helper_center_position())
+
+
+func _helper_spawn_position(spawn_index: int) -> Vector2:
+	var scale: float = _ui_scale()
+	var x: float = (SPAWN_MARGIN_PT + 18.0 + float(spawn_index) * 46.0) * scale
+	var y: float = (TOP_RESERVED_PT + 22.0 + float(spawn_index % 2) * 32.0) * scale
+	return _clamp_helper_position(Vector2(x, y))
+
+
+func _random_helper_center_position() -> Vector2:
+	var scale: float = _ui_scale()
+	var helper_size: Vector2 = _helper_size()
+	var min_x: float = HELPER_WANDER_MARGIN_PT * scale + helper_size.x * 0.5
+	var max_x: float = maxf(min_x, size.x - HELPER_WANDER_MARGIN_PT * scale - helper_size.x * 0.5)
+	var min_y: float = TOP_RESERVED_PT * scale + helper_size.y * 0.5
+	var max_y: float = maxf(min_y, size.y - HELPER_WANDER_MARGIN_PT * scale - helper_size.y * 0.5)
+	return Vector2(_rng.randf_range(min_x, max_x), _rng.randf_range(min_y, max_y))
+
+
+func _clamp_helper_position(position: Vector2) -> Vector2:
+	var scale: float = _ui_scale()
+	var helper_size: Vector2 = _helper_size()
+	var min_x: float = HELPER_WANDER_MARGIN_PT * scale
+	var max_x: float = maxf(min_x, size.x - helper_size.x - HELPER_WANDER_MARGIN_PT * scale)
+	var min_y: float = TOP_RESERVED_PT * scale
+	var max_y: float = maxf(min_y, size.y - helper_size.y - HELPER_WANDER_MARGIN_PT * scale)
+	return Vector2(clampf(position.x, min_x, max_x), clampf(position.y, min_y, max_y))
 
 
 func _current_scene() -> Dictionary:
@@ -274,10 +490,25 @@ func apply_layout(viewport_size: Vector2) -> void:
 		_empty_label.size = Vector2(minf(size.x * 0.76, 310.0 * scale), 86.0 * scale)
 		_empty_label.position = Vector2((size.x - _empty_label.size.x) * 0.5, maxf(150.0 * scale, size.y * 0.42))
 		_empty_label.add_theme_font_size_override("font_size", int(17.0 * scale))
+	_relayout_helpers()
 
 
 func _drop_size() -> Vector2:
 	return DROP_SIZE_PT * _ui_scale()
+
+
+func _helper_size() -> Vector2:
+	return HELPER_SIZE_PT * _ui_scale()
+
+
+func _relayout_helpers() -> void:
+	for child in get_children():
+		var helper: TextureRect = child as TextureRect
+		if helper == null or not bool(helper.get_meta("is_helper", false)):
+			continue
+		helper.size = _helper_size()
+		helper.pivot_offset = helper.size * 0.5
+		helper.position = _clamp_helper_position(helper.position)
 
 
 func _ui_scale() -> float:

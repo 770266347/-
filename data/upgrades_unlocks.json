@@ -19,12 +19,13 @@
             "requires": ["unlock_street_can"]
         },
         {
-            "id": "unlock_bar_beer",
-            "name": "解锁啤酒瓶子",
-            "description": "酒吧开始出现啤酒瓶子。",
-            "type": "unlock_drop",
+            "id": "unlock_bar_scene",
+            "name": "解锁酒吧",
+            "description": "解锁酒吧场景，并默认产出啤酒瓶子。",
+            "type": "unlock_scene",
             "cost": 300,
-            "unlock_drop_id": "bar_beer_bottle",
+            "unlock_scene_id": "bar",
+            "unlock_drop_ids": ["bar_beer_bottle"],
             "requires": []
         },
         {
@@ -34,7 +35,7 @@
             "type": "unlock_drop",
             "cost": 800,
             "unlock_drop_id": "bar_wine_bottle",
-            "requires": ["unlock_bar_beer"]
+            "requires": ["unlock_bar_scene"]
         },
         {
             "id": "unlock_bar_baijiu",

@@ -120,12 +120,30 @@ func get_default_scene_id() -> String:
     return default_scene_id
 
 
+func get_default_unlocked_scenes() -> Array:
+    var out: Array = []
+    for scene in scenes:
+        if bool(scene.get("default_unlocked", false)):
+            out.append(String(scene.get("id", "")))
+    if out.is_empty() and not default_scene_id.is_empty():
+        out.append(default_scene_id)
+    return out
+
+
 func get_scene(scene_id: String) -> Dictionary:
     return scenes_by_id.get(scene_id, {})
 
 
 func get_scene_name(scene_id: String) -> String:
     return String(get_scene(scene_id).get("name", scene_id))
+
+
+func get_scene_unlock_drop_ids(scene_id: String) -> Array:
+    var scene: Dictionary = get_scene(scene_id)
+    var out: Array = []
+    for drop_id in scene.get("default_unlock_drop_ids", []):
+        out.append(String(drop_id))
+    return out
 
 
 func get_next_scene_id(scene_id: String) -> String:

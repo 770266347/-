@@ -4,6 +4,7 @@
         {
             "id": "street",
             "name": "街道",
+            "default_unlocked": true,
             "background": "res://assets/street_pickup_bg_clean.png",
             "spawn_interval_min": 0.65,
             "spawn_interval_max": 1.25,
@@ -44,6 +45,9 @@
         {
             "id": "bar",
             "name": "酒吧",
+            "default_unlocked": false,
+            "unlock_cost": 300,
+            "default_unlock_drop_ids": ["bar_beer_bottle"],
             "background": "res://assets/scenes/bar_bg.svg",
             "spawn_interval_min": 0.75,
             "spawn_interval_max": 1.35,

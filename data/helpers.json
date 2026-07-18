@@ -9,7 +9,8 @@
             "collect_radius": 24,
             "collect_cooldown": 1.2,
             "scenes": ["street"],
-            "preferred_types": ["plastic"]
+            "preferred_types": ["plastic"],
+            "sprite": "res://assets/helpers/helper_neighbor.svg"
         },
         {
             "id": "helper_cart",
@@ -20,7 +21,8 @@
             "collect_radius": 28,
             "collect_cooldown": 0.9,
             "scenes": ["street"],
-            "preferred_types": ["plastic", "metal", "paper"]
+            "preferred_types": ["plastic", "metal", "paper"],
+            "sprite": "res://assets/helpers/helper_cart.svg"
         },
         {
             "id": "helper_bar_staff",
@@ -31,7 +33,8 @@
             "collect_radius": 28,
             "collect_cooldown": 0.8,
             "scenes": ["bar"],
-            "preferred_types": ["glass"]
+            "preferred_types": ["glass"],
+            "sprite": "res://assets/helpers/helper_bar_staff.svg"
         }
     ]
 }
