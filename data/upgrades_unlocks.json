@@ -1,10 +1,48 @@
 {
     "upgrades": [
         {
+            "id": "upgrade_global_value",
+            "name": "通用回收价",
+            "description": "每级使所有场景的回收物现金收益提高 10%。",
+            "type": "global_value",
+            "scope": "global",
+            "max_level": 20,
+            "cost_base": 100,
+            "cost_growth": 1.75,
+            "effect_per_level": 0.1,
+            "requires": []
+        },
+        {
+            "id": "upgrade_global_spawn",
+            "name": "通用刷新效率",
+            "description": "每级使所有场景的刷新间隔缩短 3%。",
+            "type": "global_spawn",
+            "scope": "global",
+            "max_level": 15,
+            "cost_base": 250,
+            "cost_growth": 1.85,
+            "effect_per_level": 0.03,
+            "requires": []
+        },
+        {
+            "id": "upgrade_global_capacity",
+            "name": "通用场地容量",
+            "description": "每级使所有场景的同屏产物上限增加 1。",
+            "type": "global_capacity",
+            "scope": "global",
+            "max_level": 5,
+            "cost_base": 500,
+            "cost_growth": 3.0,
+            "effect_per_level": 1,
+            "requires": []
+        },
+        {
             "id": "unlock_street_can",
             "name": "解锁易拉罐",
             "description": "街道开始出现易拉罐。",
             "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "street",
             "cost": 30,
             "unlock_drop_id": "street_can",
             "requires": []
@@ -14,6 +52,8 @@
             "name": "解锁纸皮箱",
             "description": "街道低概率出现纸皮箱。",
             "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "street",
             "cost": 120,
             "unlock_drop_id": "street_cardboard_box",
             "requires": ["unlock_street_can"]
@@ -23,6 +63,7 @@
             "name": "解锁酒吧",
             "description": "解锁酒吧场景，并默认产出啤酒瓶子。",
             "type": "unlock_scene",
+            "scope": "scene_unlock",
             "cost": 300,
             "unlock_scene_id": "bar",
             "unlock_drop_ids": ["bar_beer_bottle"],
@@ -33,6 +74,8 @@
             "name": "解锁红酒瓶子",
             "description": "酒吧开始出现红酒瓶子。",
             "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "bar",
             "cost": 800,
             "unlock_drop_id": "bar_wine_bottle",
             "requires": ["unlock_bar_scene"]
@@ -42,9 +85,132 @@
             "name": "解锁白酒瓶子",
             "description": "酒吧低概率出现白酒瓶子。",
             "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "bar",
             "cost": 1800,
             "unlock_drop_id": "bar_baijiu_bottle",
             "requires": ["unlock_bar_wine"]
+        },
+        {
+            "id": "unlock_night_market_scene",
+            "name": "解锁夜市",
+            "description": "解锁夜市场景，并默认产出奶茶杯。",
+            "type": "unlock_scene",
+            "scope": "scene_unlock",
+            "cost": 3000,
+            "unlock_scene_id": "night_market",
+            "unlock_drop_ids": ["night_market_milk_tea_cup"],
+            "requires": ["unlock_bar_scene"]
+        },
+        {
+            "id": "unlock_night_market_takeaway",
+            "name": "解锁外卖盒",
+            "description": "夜市开始出现外卖盒。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "night_market",
+            "cost": 6000,
+            "unlock_drop_id": "night_market_takeaway_box",
+            "requires": ["unlock_night_market_scene"]
+        },
+        {
+            "id": "unlock_night_market_oil",
+            "name": "解锁食用油瓶",
+            "description": "夜市低概率出现高价值食用油瓶。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "night_market",
+            "cost": 15000,
+            "unlock_drop_id": "night_market_oil_bottle",
+            "requires": ["unlock_night_market_takeaway"]
+        },
+        {
+            "id": "unlock_beach_scene",
+            "name": "解锁海滩",
+            "description": "解锁海滩场景，并默认产出饮料瓶。",
+            "type": "unlock_scene",
+            "scope": "scene_unlock",
+            "cost": 15000,
+            "unlock_scene_id": "beach",
+            "unlock_drop_ids": ["beach_drink_bottle"],
+            "requires": ["unlock_night_market_scene"]
+        },
+        {
+            "id": "unlock_beach_sunscreen",
+            "name": "解锁防晒霜瓶",
+            "description": "海滩开始出现防晒霜瓶。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "beach",
+            "cost": 40000,
+            "unlock_drop_id": "beach_sunscreen_bottle",
+            "requires": ["unlock_beach_scene"]
+        },
+        {
+            "id": "unlock_beach_float",
+            "name": "解锁塑料浮球",
+            "description": "海滩低概率出现塑料浮球。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "beach",
+            "cost": 90000,
+            "unlock_drop_id": "beach_plastic_float",
+            "requires": ["unlock_beach_sunscreen"]
+        },
+        {
+            "id": "unlock_beach_net",
+            "name": "解锁废弃渔网",
+            "description": "海滩极低概率出现高价值废弃渔网。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "beach",
+            "cost": 200000,
+            "unlock_drop_id": "beach_fishing_net",
+            "requires": ["unlock_beach_float"]
+        },
+        {
+            "id": "unlock_industrial_scene",
+            "name": "解锁工业园",
+            "description": "解锁工业园场景，并默认产出塑料桶。",
+            "type": "unlock_scene",
+            "scope": "scene_unlock",
+            "cost": 80000,
+            "unlock_scene_id": "industrial_park",
+            "unlock_drop_ids": ["industrial_plastic_drum"],
+            "requires": ["unlock_beach_scene"]
+        },
+        {
+            "id": "unlock_industrial_aluminum",
+            "name": "解锁铝制零件",
+            "description": "工业园开始出现铝制零件。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "industrial_park",
+            "cost": 250000,
+            "unlock_drop_id": "industrial_aluminum_part",
+            "requires": ["unlock_industrial_scene"]
+        },
+        {
+            "id": "unlock_industrial_wire",
+            "name": "解锁废旧电线",
+            "description": "工业园低概率出现废旧电线。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "industrial_park",
+            "cost": 600000,
+            "unlock_drop_id": "industrial_scrap_wire",
+            "requires": ["unlock_industrial_aluminum"]
+        },
+        {
+            "id": "unlock_industrial_copper",
+            "name": "解锁铜制零件",
+            "description": "工业园极低概率出现高价值铜制零件。",
+            "type": "unlock_drop",
+            "scope": "scene",
+            "scene_id": "industrial_park",
+            "cost": 1500000,
+            "unlock_drop_id": "industrial_copper_part",
+            "requires": ["unlock_industrial_wire"]
         }
     ]
 }

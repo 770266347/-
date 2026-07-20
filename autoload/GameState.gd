@@ -3,6 +3,9 @@ extends Node
 
 const SAVE_VERSION: int = 5
 const BASE_BOTTLE_VALUE: float = 1.0
+const GLOBAL_VALUE_UPGRADE_ID: String = "upgrade_global_value"
+const GLOBAL_SPAWN_UPGRADE_ID: String = "upgrade_global_spawn"
+const GLOBAL_CAPACITY_UPGRADE_ID: String = "upgrade_global_capacity"
 
 var save_version: int = SAVE_VERSION
 var bottles: int = 0
@@ -80,7 +83,15 @@ func get_bottles_per_collect() -> int:
 
 
 func get_drop_cash_value(base_cash: float) -> float:
-    return base_cash
+    return base_cash * (1.0 + _upgrade_effect_total(GLOBAL_VALUE_UPGRADE_ID))
+
+
+func get_global_spawn_interval_multiplier() -> float:
+    return maxf(0.4, 1.0 - _upgrade_effect_total(GLOBAL_SPAWN_UPGRADE_ID))
+
+
+func get_global_capacity_bonus() -> int:
+    return int(round(_upgrade_effect_total(GLOBAL_CAPACITY_UPGRADE_ID)))
 
 
 func set_current_scene_id(scene_id: String) -> bool:
@@ -266,3 +277,8 @@ func _apply_unlock_upgrades_to_state() -> void:
                     var id: String = String(drop_id)
                     if not id.is_empty() and not ConfigDB.get_drop(id).is_empty():
                         unlocked_drops[id] = true
+
+
+func _upgrade_effect_total(upgrade_id: String) -> float:
+    var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
+    return float(get_upgrade_level(upgrade_id)) * float(row.get("effect_per_level", 0.0))

@@ -16,13 +16,14 @@
 ## Systems
 
 - `ProductionSystem`：处理玩家点击产物后的统一收益发放。
-- `UpgradeSystem`：购买产物解锁升级。
+- `UpgradeSystem`：购买通用升级、场景产物升级和帮手。
 
 ## UI
 
 - `HUD`：顶部现金、回收物数量和场景切换入口。
 - `BottleSpawnArea`：中间产物生成区，按当前场景和已解锁产物刷出可点击目标。
-- `UpgradePanel`：底部产物解锁升级列表。
+- `UpgradePanel`：底部升级、场景和帮手页签，以及升级子页签。
+- `GMPanel`：仅调试构建启用，按 `F1` 打开，可快捷或自定义增加现金。
 
 ## 后续扩展建议
 

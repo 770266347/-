@@ -28,6 +28,7 @@ func _ready() -> void:
 	EventBus.drop_collected.connect(_on_drop_collected)
 	EventBus.scene_changed.connect(_on_scene_changed)
 	EventBus.unlocked_drops_changed.connect(_on_unlocked_drops_changed)
+	EventBus.upgrade_purchased.connect(_on_upgrade_purchased)
 	EventBus.helper_purchased.connect(_on_helper_purchased)
 	_reset_spawn_timer(0.1)
 	set_process(true)
@@ -47,7 +48,7 @@ func _process(delta: float) -> void:
 		_reset_spawn_timer(0.8)
 		return
 
-	var max_on_screen: int = int(_current_scene().get("max_on_screen", 9))
+	var max_on_screen: int = int(_current_scene().get("max_on_screen", 9)) + GameState.get_global_capacity_bonus()
 	if _active_drop_count() < max_on_screen:
 		_spawn_drop(_pick_weighted_drop(drops))
 	_reset_spawn_timer()
@@ -210,9 +211,10 @@ func _reset_spawn_timer(first_delay: float = -1.0) -> void:
 		_spawn_timer = first_delay
 	else:
 		var scene: Dictionary = _current_scene()
+		var interval_multiplier: float = GameState.get_global_spawn_interval_multiplier()
 		_spawn_timer = _rng.randf_range(
-			float(scene.get("spawn_interval_min", 0.65)),
-			float(scene.get("spawn_interval_max", 1.25))
+			float(scene.get("spawn_interval_min", 0.65)) * interval_multiplier,
+			float(scene.get("spawn_interval_max", 1.25)) * interval_multiplier
 		)
 
 
@@ -244,6 +246,12 @@ func _on_scene_changed(_scene_id: String) -> void:
 func _on_unlocked_drops_changed() -> void:
 	_update_empty_state(_get_available_drops())
 	_reset_spawn_timer(0.1)
+
+
+func _on_upgrade_purchased(upgrade_id, _new_level: int) -> void:
+	var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
+	if String(row.get("type", "")) == "global_spawn":
+		_reset_spawn_timer(0.05)
 
 
 func _on_helper_purchased(_helper_id: String) -> void:

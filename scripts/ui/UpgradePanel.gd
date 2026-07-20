@@ -5,14 +5,22 @@ const BASE_LOGICAL_WIDTH: float = 393.0
 const TAB_PRICE: String = "price"
 const TAB_SCENE: String = "scene"
 const TAB_HELPER: String = "helper"
+const UPGRADE_SCOPE_GLOBAL: String = "global"
 
 var panel_container: PanelContainer
 var tab_bar: HBoxContainer
 var price_tab_button: Button
 var scene_tab_button: Button
 var helper_tab_button: Button
+var upgrade_subtab_row: HBoxContainer
+var upgrade_subtab_left_button: Button
+var upgrade_subtab_right_button: Button
+var upgrade_subtab_scroll: ScrollContainer
+var upgrade_subtab_bar: HBoxContainer
+var upgrade_subtab_buttons: Dictionary = {}
 var list: VBoxContainer
 var _selected_tab: String = TAB_PRICE
+var _selected_upgrade_scope: String = UPGRADE_SCOPE_GLOBAL
 
 
 func _ready() -> void:
@@ -57,6 +65,35 @@ func _build() -> void:
 	helper_tab_button.pressed.connect(func(): _select_tab(TAB_HELPER))
 	tab_bar.add_child(helper_tab_button)
 
+	upgrade_subtab_row = HBoxContainer.new()
+	box.add_child(upgrade_subtab_row)
+
+	upgrade_subtab_left_button = Button.new()
+	upgrade_subtab_left_button.text = "<"
+	upgrade_subtab_left_button.tooltip_text = "向左移动升级子页签"
+	upgrade_subtab_left_button.pressed.connect(_scroll_upgrade_subtabs.bind(-1))
+	upgrade_subtab_row.add_child(upgrade_subtab_left_button)
+
+	upgrade_subtab_scroll = ScrollContainer.new()
+	upgrade_subtab_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	upgrade_subtab_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	upgrade_subtab_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	upgrade_subtab_row.add_child(upgrade_subtab_scroll)
+
+	upgrade_subtab_bar = HBoxContainer.new()
+	upgrade_subtab_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	upgrade_subtab_scroll.add_child(upgrade_subtab_bar)
+	_build_upgrade_subtabs()
+
+	upgrade_subtab_right_button = Button.new()
+	upgrade_subtab_right_button.text = ">"
+	upgrade_subtab_right_button.tooltip_text = "向右移动升级子页签"
+	upgrade_subtab_right_button.pressed.connect(_scroll_upgrade_subtabs.bind(1))
+	upgrade_subtab_row.add_child(upgrade_subtab_right_button)
+
+	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
+	horizontal_bar.value_changed.connect(func(_value: float): _refresh_upgrade_subtab_arrows())
+
 	var scroll: ScrollContainer = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(scroll)
@@ -66,6 +103,23 @@ func _build() -> void:
 	scroll.add_child(list)
 
 
+func _build_upgrade_subtabs() -> void:
+	upgrade_subtab_buttons.clear()
+	_add_upgrade_subtab(UPGRADE_SCOPE_GLOBAL, "通用")
+	for scene in ConfigDB.get_scenes():
+		var scene_id: String = String(scene.get("id", ""))
+		if not scene_id.is_empty():
+			_add_upgrade_subtab(scene_id, String(scene.get("name", scene_id)))
+
+
+func _add_upgrade_subtab(scope_id: String, label: String) -> void:
+	var btn: Button = Button.new()
+	btn.text = label
+	btn.pressed.connect(_select_upgrade_scope.bind(scope_id))
+	upgrade_subtab_bar.add_child(btn)
+	upgrade_subtab_buttons[scope_id] = btn
+
+
 func _select_tab(tab_id: String) -> void:
 	if _selected_tab == tab_id:
 		return
@@ -73,11 +127,32 @@ func _select_tab(tab_id: String) -> void:
 	_refresh()
 
 
+func _select_upgrade_scope(scope_id: String) -> void:
+	if _selected_upgrade_scope == scope_id:
+		return
+	_selected_upgrade_scope = scope_id
+	_refresh()
+
+
+func _scroll_upgrade_subtabs(direction: int) -> void:
+	if upgrade_subtab_scroll == null:
+		return
+	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
+	var max_scroll: float = maxf(0.0, horizontal_bar.max_value - horizontal_bar.page)
+	var step: float = maxf(90.0 * _ui_scale(get_viewport_rect().size), upgrade_subtab_scroll.size.x * 0.55)
+	var target: float = clampf(float(upgrade_subtab_scroll.scroll_horizontal) + step * float(direction), 0.0, max_scroll)
+	upgrade_subtab_scroll.scroll_horizontal = int(round(target))
+	call_deferred("_refresh_upgrade_subtab_arrows")
+
+
 func _refresh() -> void:
 	if list == null:
 		return
 	_clear_list()
 	_refresh_tabs()
+	if upgrade_subtab_row != null:
+		upgrade_subtab_row.visible = _selected_tab == TAB_PRICE
+	_refresh_upgrade_subtabs()
 	match _selected_tab:
 		TAB_SCENE:
 			_build_scene_buttons()
@@ -86,13 +161,14 @@ func _refresh() -> void:
 		_:
 			_build_upgrade_buttons()
 	apply_layout(get_viewport_rect().size)
+	call_deferred("_refresh_upgrade_subtab_arrows")
 
 
 func _build_upgrade_buttons() -> void:
-	var rows: Array = _ordered_upgrades()
+	var rows: Array = _upgrades_for_selected_scope()
 	for row in rows:
 		var id = row.get("id", "")
-		var btn: Button = _make_list_button(_upgrade_button_text(row))
+		var btn: Button = _make_list_button(_upgrade_button_text(row, false))
 		btn.disabled = _upgrade_system() == null or not _upgrade_system().can_buy(id)
 		btn.pressed.connect(_on_buy_upgrade_pressed.bind(id))
 		list.add_child(btn)
@@ -137,21 +213,34 @@ func _on_buy_helper_pressed(helper_id: String) -> void:
 		system.buy_helper(helper_id)
 
 
-func _upgrade_button_text(row: Dictionary) -> String:
-	var cost: float = float(row.get("cost", 0.0))
-	var scene_name: String = ConfigDB.get_scene_name(_upgrade_scene_id(row))
+func _upgrade_button_text(row: Dictionary, include_scope: bool = true) -> String:
+	var id: String = String(row.get("id", ""))
+	var level: int = GameState.get_upgrade_level(id)
+	var max_level: int = int(row.get("max_level", 1))
+	var system: UpgradeSystem = _upgrade_system()
+	var cost: float = ConfigDB.get_upgrade_cost(id, level + 1)
+	if system != null:
+		cost = system.get_next_cost(id)
 	var status: String = "%s 元" % BigNumber.format(cost)
 	if _is_upgrade_target_unlocked(row):
 		status = "已解锁"
+	elif level >= max_level:
+		status = "Lv.%d 已满级" % level
 	elif not _requirements_met(row):
 		status = "需 %s" % _requirement_names(row)
 	elif not GameState.can_afford(cost):
-		status = "差钱 %s" % BigNumber.format(cost)
-	return "%s｜%s｜%s" % [
-		scene_name,
-		String(row.get("name", "升级")),
-		status
-	]
+		status = "Lv.%d｜差钱 %s" % [level, BigNumber.format(cost)] if max_level > 1 else "差钱 %s" % BigNumber.format(cost)
+	elif max_level > 1:
+		status = "Lv.%d→%d｜%s 元" % [level, level + 1, BigNumber.format(cost)]
+	if include_scope:
+		return "%s｜%s｜%s" % [_upgrade_scope_name(row), String(row.get("name", "升级")), status]
+	return "%s｜%s" % [String(row.get("name", "升级")), status]
+
+
+func _upgrade_scope_name(row: Dictionary) -> String:
+	if String(row.get("scope", "")) == UPGRADE_SCOPE_GLOBAL:
+		return "通用"
+	return ConfigDB.get_scene_name(_upgrade_scene_id(row))
 
 
 func _helper_button_text(row: Dictionary) -> String:
@@ -176,17 +265,18 @@ func _helper_owned_status(row: Dictionary) -> String:
 	return "已拥有"
 
 
-func _ordered_upgrades() -> Array:
-	var current: Array = []
-	var others: Array = []
+func _upgrades_for_selected_scope() -> Array:
+	var out: Array = []
 	for row in ConfigDB.get_upgrades():
 		if String(row.get("type", "")) == "unlock_scene":
 			continue
-		if _upgrade_scene_id(row) == GameState.current_scene_id:
-			current.append(row)
-		else:
-			others.append(row)
-	return current + others
+		var scope: String = String(row.get("scope", "scene"))
+		if _selected_upgrade_scope == UPGRADE_SCOPE_GLOBAL:
+			if scope == UPGRADE_SCOPE_GLOBAL:
+				out.append(row)
+		elif scope != UPGRADE_SCOPE_GLOBAL and _upgrade_scene_id(row) == _selected_upgrade_scope:
+			out.append(row)
+	return out
 
 
 func _scene_unlocks() -> Array:
@@ -198,6 +288,9 @@ func _scene_unlocks() -> Array:
 
 
 func _upgrade_scene_id(row: Dictionary) -> String:
+	var configured_scene_id: String = String(row.get("scene_id", ""))
+	if not configured_scene_id.is_empty():
+		return configured_scene_id
 	if String(row.get("type", "")) == "unlock_scene":
 		return String(row.get("unlock_scene_id", ""))
 	var drop: Dictionary = ConfigDB.get_drop(String(row.get("unlock_drop_id", "")))
@@ -248,6 +341,23 @@ func _refresh_tabs() -> void:
 	helper_tab_button.disabled = _selected_tab == TAB_HELPER
 
 
+func _refresh_upgrade_subtabs() -> void:
+	for scope_id in upgrade_subtab_buttons.keys():
+		var btn: Button = upgrade_subtab_buttons.get(scope_id) as Button
+		if btn != null:
+			btn.disabled = String(scope_id) == _selected_upgrade_scope
+
+
+func _refresh_upgrade_subtab_arrows() -> void:
+	if upgrade_subtab_scroll == null or upgrade_subtab_left_button == null or upgrade_subtab_right_button == null:
+		return
+	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
+	var max_scroll: float = maxf(0.0, horizontal_bar.max_value - horizontal_bar.page)
+	var current_scroll: float = float(upgrade_subtab_scroll.scroll_horizontal)
+	upgrade_subtab_left_button.disabled = current_scroll <= 1.0
+	upgrade_subtab_right_button.disabled = current_scroll >= max_scroll - 1.0
+
+
 func _upgrade_system() -> UpgradeSystem:
 	return get_tree().root.get_node_or_null("Main/Systems/UpgradeSystem") as UpgradeSystem
 
@@ -258,6 +368,20 @@ func apply_layout(viewport_size: Vector2) -> void:
 		panel_container.add_theme_stylebox_override("panel", _panel_style(scale))
 	if tab_bar != null:
 		tab_bar.add_theme_constant_override("separation", int(5.0 * scale))
+	if upgrade_subtab_row != null:
+		upgrade_subtab_row.add_theme_constant_override("separation", int(4.0 * scale))
+	if upgrade_subtab_scroll != null:
+		upgrade_subtab_scroll.custom_minimum_size = Vector2(0.0, 28.0 * scale)
+	if upgrade_subtab_left_button != null:
+		_style_upgrade_subtab_arrow(upgrade_subtab_left_button, scale)
+	if upgrade_subtab_right_button != null:
+		_style_upgrade_subtab_arrow(upgrade_subtab_right_button, scale)
+	if upgrade_subtab_bar != null:
+		upgrade_subtab_bar.add_theme_constant_override("separation", int(4.0 * scale))
+		for child in upgrade_subtab_bar.get_children():
+			var subtab: Button = child as Button
+			if subtab != null:
+				_style_upgrade_subtab_button(subtab, scale)
 	if price_tab_button != null:
 		_style_tab_button(price_tab_button, scale)
 	if scene_tab_button != null:
@@ -278,6 +402,7 @@ func apply_layout(viewport_size: Vector2) -> void:
 		btn.add_theme_stylebox_override("normal", _button_style(Color(1.0, 0.96, 0.76, 1.0), Color(0.5, 0.4, 0.24, 1.0), scale))
 		btn.add_theme_stylebox_override("hover", _button_style(Color(1.0, 0.9, 0.5, 1.0), Color(0.55, 0.42, 0.18, 1.0), scale))
 		btn.add_theme_stylebox_override("disabled", _button_style(Color(0.78, 0.76, 0.7, 1.0), Color(0.54, 0.52, 0.48, 1.0), scale))
+	call_deferred("_refresh_upgrade_subtab_arrows")
 
 
 func _style_tab_button(btn: Button, scale: float) -> void:
@@ -285,6 +410,20 @@ func _style_tab_button(btn: Button, scale: float) -> void:
 	btn.add_theme_font_size_override("font_size", int(12.0 * scale))
 	btn.add_theme_color_override("font_color", Color(0.16, 0.13, 0.18, 1.0))
 	btn.add_theme_color_override("font_disabled_color", Color(0.95, 0.9, 1.0, 1.0))
+
+
+func _style_upgrade_subtab_button(btn: Button, scale: float) -> void:
+	btn.custom_minimum_size = Vector2(58.0 * scale, 26.0 * scale)
+	btn.add_theme_font_size_override("font_size", int(11.0 * scale))
+	btn.add_theme_color_override("font_color", Color(0.25, 0.2, 0.3, 1.0))
+	btn.add_theme_color_override("font_disabled_color", Color(0.98, 0.95, 1.0, 1.0))
+
+
+func _style_upgrade_subtab_arrow(btn: Button, scale: float) -> void:
+	btn.custom_minimum_size = Vector2(28.0 * scale, 26.0 * scale)
+	btn.add_theme_font_size_override("font_size", int(14.0 * scale))
+	btn.add_theme_color_override("font_color", Color(0.25, 0.2, 0.3, 1.0))
+	btn.add_theme_color_override("font_disabled_color", Color(0.58, 0.55, 0.62, 0.7))
 
 
 func _ui_scale(viewport_size: Vector2) -> float:
