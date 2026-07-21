@@ -13,6 +13,12 @@ const HELPER_WANDER_MARGIN_PT: float = 28.0
 const HELPER_WANDER_ARRIVE_PT: float = 8.0
 const HELPER_SPAWN_COLUMNS: int = 5
 const HELPER_ENTRY_COLUMNS: int = 4
+const DROP_Z_BASE: int = 10
+const HELPER_Z_INDEX: int = 2500
+const PORTAL_Z_INDEX: int = 2600
+const OVERLAY_Z_INDEX: int = 3000
+const POPUP_Z_INDEX: int = 3100
+const COLLECT_INPUT_DEDUP_MS: int = 90
 const PORTAL_SIZE_PT: Vector2 = Vector2(38.0, 76.0)
 const TRANSITION_HELPER_SPEED_PT: float = 180.0
 const TRANSITION_ARRIVE_PT: float = 8.0
@@ -32,6 +38,8 @@ var _transition_target_scene_id: String = ""
 var _transition_direction: int = 1
 var _transition_portal: Control
 var _transition_timer: float = 0.0
+var _drop_input_enabled: bool = true
+var _last_collect_input_msec: int = -COLLECT_INPUT_DEDUP_MS
 
 
 func _ready() -> void:
@@ -84,14 +92,14 @@ func _build_empty_label() -> void:
 	_empty_label.modulate = Color(1.0, 0.96, 0.78, 0.92)
 	_empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_empty_label.visible = false
-	_empty_label.z_index = 5
+	_empty_label.z_index = OVERLAY_Z_INDEX
 	add_child(_empty_label)
 
 
 func _build_inventory_counter() -> void:
 	_inventory_panel = PanelContainer.new()
 	_inventory_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_inventory_panel.z_index = 5
+	_inventory_panel.z_index = OVERLAY_Z_INDEX
 	add_child(_inventory_panel)
 
 	_inventory_label = Label.new()
@@ -145,7 +153,6 @@ func _spawn_drop(drop: Dictionary, animate: bool = true) -> void:
 	glow.position = _random_drop_position()
 	glow.modulate = Color(0.62, 1.0, 0.35, 0.5)
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	glow.z_index = 1
 	glow.set_meta("is_drop_glow", true)
 	add_child(glow)
 
@@ -155,13 +162,12 @@ func _spawn_drop(drop: Dictionary, animate: bool = true) -> void:
 	item.size = item_size
 	item.pivot_offset = item_size * 0.5
 	item.position = glow.position + (glow.size - item.size) * 0.5
-	item.mouse_filter = Control.MOUSE_FILTER_STOP if _transition_state == TRANSITION_IDLE else Control.MOUSE_FILTER_IGNORE
+	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	item.set_meta("is_drop", true)
 	item.set_meta("drop", drop)
 	item.set_meta("glow", glow)
-	item.z_index = 2
-	item.gui_input.connect(_on_drop_gui_input.bind(item))
 	add_child(item)
+	_update_drop_layer(item, glow)
 
 	if animate:
 		item.modulate.a = 0.0
@@ -190,17 +196,59 @@ func _random_drop_position() -> Vector2:
 	return Vector2(_rng.randf_range(min_x, max_x), _rng.randf_range(min_y, max_y))
 
 
-func _on_drop_gui_input(event: InputEvent, item: TextureRect) -> void:
+func _gui_input(event: InputEvent) -> void:
+	var pointer_position: Vector2
 	var pressed: bool = false
 	if event is InputEventMouseButton:
-		pressed = event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
+		pressed = mouse_button.pressed and mouse_button.button_index == MOUSE_BUTTON_LEFT
+		pointer_position = mouse_button.position
 	elif event is InputEventScreenTouch:
-		pressed = event.pressed
-
-	if not pressed or bool(item.get_meta("collected", false)):
+		var touch: InputEventScreenTouch = event as InputEventScreenTouch
+		pressed = touch.pressed
+		pointer_position = touch.position
+	else:
+		return
+	if not pressed or not _drop_input_enabled or _transition_state != TRANSITION_IDLE:
 		return
 
+	var now_msec: int = Time.get_ticks_msec()
+	if now_msec - _last_collect_input_msec < COLLECT_INPUT_DEDUP_MS:
+		accept_event()
+		return
+	var item: TextureRect = _top_drop_at_position(pointer_position)
+	if item == null:
+		return
+	_last_collect_input_msec = now_msec
 	_collect_drop_item(item)
+	accept_event()
+
+
+func _top_drop_at_position(pointer_position: Vector2) -> TextureRect:
+	var top_item: TextureRect = null
+	var top_z_index: int = -1
+	var top_child_index: int = -1
+	for child in get_children():
+		var item: TextureRect = child as TextureRect
+		if item == null or item.is_queued_for_deletion():
+			continue
+		if not bool(item.get_meta("is_drop", false)) or bool(item.get_meta("collected", false)):
+			continue
+		if not Rect2(item.position, item.size).has_point(pointer_position):
+			continue
+		var child_index: int = item.get_index()
+		if item.z_index > top_z_index or (item.z_index == top_z_index and child_index > top_child_index):
+			top_item = item
+			top_z_index = item.z_index
+			top_child_index = child_index
+	return top_item
+
+
+func _update_drop_layer(item: TextureRect, glow: TextureRect) -> void:
+	var logical_y: float = item.position.y / _ui_scale()
+	item.z_index = DROP_Z_BASE + clampi(int(round(logical_y * 2.0)), 0, 2000)
+	if is_instance_valid(glow):
+		glow.z_index = item.z_index - 1
 
 
 func _collect_drop_item(item: TextureRect) -> bool:
@@ -333,7 +381,7 @@ func _on_drop_collected(drop_name: String, amount: int, cash_amount: float, scre
 	label.add_theme_font_size_override("font_size", int(20.0 * scale))
 	label.modulate = Color(0.1, 0.55, 0.28, 1.0)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.z_index = 6
+	label.z_index = POPUP_Z_INDEX
 	add_child(label)
 	label.global_position = screen_pos - Vector2(92.0, 38.0) * scale
 
@@ -493,7 +541,7 @@ func _create_transition_portal(on_right: bool) -> void:
 	portal.pivot_offset = portal.size * 0.5
 	portal.position = _transition_portal_position(on_right, portal.size)
 	portal.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	portal.z_index = 3
+	portal.z_index = PORTAL_Z_INDEX
 	portal.set_meta("is_transition_portal", true)
 	add_child(portal)
 
@@ -568,10 +616,11 @@ func _helper_nodes() -> Array:
 
 
 func _set_active_drops_input(enabled: bool) -> void:
+	_drop_input_enabled = enabled
 	for child in get_children():
 		var item: TextureRect = child as TextureRect
 		if item != null and bool(item.get_meta("is_drop", false)):
-			item.mouse_filter = Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+			item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func _portal_style(bg: Color, border: Color, border_width: float, scale: float) -> StyleBoxFlat:
@@ -655,7 +704,7 @@ func _spawn_helper(row: Dictionary, spawn_index: int) -> void:
 	helper.pivot_offset = helper.size * 0.5
 	helper.position = _helper_spawn_position(spawn_index)
 	helper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	helper.z_index = 4
+	helper.z_index = HELPER_Z_INDEX
 	helper.set_meta("is_helper", true)
 	helper.set_meta("helper_id", String(row.get("id", "")))
 	helper.set_meta("config", row)
@@ -953,8 +1002,10 @@ func _relayout_drops() -> void:
 			glow.pivot_offset = glow.size * 0.5
 			glow.position = _random_drop_position()
 			item.position = glow.position + (glow.size - item.size) * 0.5
+			_update_drop_layer(item, glow)
 		else:
 			item.position = _random_drop_position()
+			_update_drop_layer(item, null)
 
 
 func _relayout_helpers() -> void:
