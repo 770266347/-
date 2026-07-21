@@ -9,8 +9,13 @@ signal drop_collected(drop_name: String, amount: int, cash_amount: float, screen
 signal upgrade_purchased(upgrade_id, new_level: int)
 signal upgrade_maxed(upgrade_id)
 signal helper_purchased(helper_id: String)
+signal helper_active_changed(helper_id: String, active: bool)
 signal scene_unlocked(scene_id: String)
+signal scene_switch_requested(offset: int)
+signal scene_transition_started()
+signal scene_transition_finished(scene_id: String)
 signal scene_changed(scene_id: String)
+signal scene_inventory_changed(scene_id: String)
 signal unlocked_drops_changed()
 
 signal save_loaded()

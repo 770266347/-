@@ -6,21 +6,26 @@ const TAB_PRICE: String = "price"
 const TAB_SCENE: String = "scene"
 const TAB_HELPER: String = "helper"
 const UPGRADE_SCOPE_GLOBAL: String = "global"
+const SUBTAB_DRAG_THRESHOLD_PT: float = 8.0
 
 var panel_container: PanelContainer
 var tab_bar: HBoxContainer
 var price_tab_button: Button
 var scene_tab_button: Button
 var helper_tab_button: Button
-var upgrade_subtab_row: HBoxContainer
-var upgrade_subtab_left_button: Button
-var upgrade_subtab_right_button: Button
+var upgrade_subtab_viewport: Control
 var upgrade_subtab_scroll: ScrollContainer
 var upgrade_subtab_bar: HBoxContainer
+var upgrade_subtab_input_layer: Control
 var upgrade_subtab_buttons: Dictionary = {}
 var list: VBoxContainer
 var _selected_tab: String = TAB_PRICE
 var _selected_upgrade_scope: String = UPGRADE_SCOPE_GLOBAL
+var _subtab_pointer_active: bool = false
+var _subtab_dragging: bool = false
+var _subtab_pointer_start_x: float = 0.0
+var _subtab_pointer_last_x: float = 0.0
+var _scene_transitioning: bool = false
 
 
 func _ready() -> void:
@@ -30,7 +35,10 @@ func _ready() -> void:
 	EventBus.unlocked_drops_changed.connect(func(): _refresh())
 	EventBus.scene_unlocked.connect(func(_id: String): _refresh())
 	EventBus.helper_purchased.connect(func(_id: String): _refresh())
+	EventBus.helper_active_changed.connect(func(_id: String, _active: bool): _refresh())
 	EventBus.scene_changed.connect(func(_id: String): _refresh())
+	EventBus.scene_transition_started.connect(_on_scene_transition_started)
+	EventBus.scene_transition_finished.connect(_on_scene_transition_finished)
 	_refresh()
 
 
@@ -65,34 +73,27 @@ func _build() -> void:
 	helper_tab_button.pressed.connect(func(): _select_tab(TAB_HELPER))
 	tab_bar.add_child(helper_tab_button)
 
-	upgrade_subtab_row = HBoxContainer.new()
-	box.add_child(upgrade_subtab_row)
-
-	upgrade_subtab_left_button = Button.new()
-	upgrade_subtab_left_button.text = "<"
-	upgrade_subtab_left_button.tooltip_text = "向左移动升级子页签"
-	upgrade_subtab_left_button.pressed.connect(_scroll_upgrade_subtabs.bind(-1))
-	upgrade_subtab_row.add_child(upgrade_subtab_left_button)
+	upgrade_subtab_viewport = Control.new()
+	upgrade_subtab_viewport.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_child(upgrade_subtab_viewport)
 
 	upgrade_subtab_scroll = ScrollContainer.new()
+	upgrade_subtab_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	upgrade_subtab_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	upgrade_subtab_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	upgrade_subtab_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	upgrade_subtab_row.add_child(upgrade_subtab_scroll)
+	upgrade_subtab_viewport.add_child(upgrade_subtab_scroll)
 
 	upgrade_subtab_bar = HBoxContainer.new()
 	upgrade_subtab_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	upgrade_subtab_scroll.add_child(upgrade_subtab_bar)
 	_build_upgrade_subtabs()
 
-	upgrade_subtab_right_button = Button.new()
-	upgrade_subtab_right_button.text = ">"
-	upgrade_subtab_right_button.tooltip_text = "向右移动升级子页签"
-	upgrade_subtab_right_button.pressed.connect(_scroll_upgrade_subtabs.bind(1))
-	upgrade_subtab_row.add_child(upgrade_subtab_right_button)
-
-	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
-	horizontal_bar.value_changed.connect(func(_value: float): _refresh_upgrade_subtab_arrows())
+	upgrade_subtab_input_layer = Control.new()
+	upgrade_subtab_input_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	upgrade_subtab_input_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	upgrade_subtab_input_layer.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	upgrade_subtab_input_layer.gui_input.connect(_on_upgrade_subtab_overlay_input)
+	upgrade_subtab_viewport.add_child(upgrade_subtab_input_layer)
 
 	var scroll: ScrollContainer = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -115,7 +116,8 @@ func _build_upgrade_subtabs() -> void:
 func _add_upgrade_subtab(scope_id: String, label: String) -> void:
 	var btn: Button = Button.new()
 	btn.text = label
-	btn.pressed.connect(_select_upgrade_scope.bind(scope_id))
+	btn.tooltip_text = "轻点切换，按住可左右拖动"
+	btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	upgrade_subtab_bar.add_child(btn)
 	upgrade_subtab_buttons[scope_id] = btn
 
@@ -134,15 +136,89 @@ func _select_upgrade_scope(scope_id: String) -> void:
 	_refresh()
 
 
-func _scroll_upgrade_subtabs(direction: int) -> void:
+func _on_upgrade_subtab_overlay_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
+		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
+			_scroll_upgrade_subtabs_by(-40.0 * _ui_scale(get_viewport_rect().size))
+			upgrade_subtab_input_layer.accept_event()
+			return
+		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_DOWN and mouse_button.pressed:
+			_scroll_upgrade_subtabs_by(40.0 * _ui_scale(get_viewport_rect().size))
+			upgrade_subtab_input_layer.accept_event()
+			return
+		if mouse_button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		var pointer_position: Vector2 = mouse_button.position
+		if mouse_button.pressed:
+			_begin_upgrade_subtab_pointer(pointer_position.x)
+		else:
+			_finish_upgrade_subtab_pointer(pointer_position)
+		upgrade_subtab_input_layer.accept_event()
+	elif event is InputEventMouseMotion and _subtab_pointer_active:
+		var mouse_motion: InputEventMouseMotion = event as InputEventMouseMotion
+		if mouse_motion.button_mask & MOUSE_BUTTON_MASK_LEFT:
+			_move_upgrade_subtab_pointer(mouse_motion.position.x)
+			upgrade_subtab_input_layer.accept_event()
+	elif event is InputEventScreenTouch:
+		var touch: InputEventScreenTouch = event as InputEventScreenTouch
+		if touch.pressed:
+			_begin_upgrade_subtab_pointer(touch.position.x)
+		else:
+			_finish_upgrade_subtab_pointer(touch.position)
+		upgrade_subtab_input_layer.accept_event()
+	elif event is InputEventScreenDrag and _subtab_pointer_active:
+		var drag: InputEventScreenDrag = event as InputEventScreenDrag
+		_move_upgrade_subtab_pointer(drag.position.x)
+		upgrade_subtab_input_layer.accept_event()
+
+
+func _begin_upgrade_subtab_pointer(pointer_x: float) -> void:
+	_subtab_pointer_active = true
+	_subtab_dragging = false
+	_subtab_pointer_start_x = pointer_x
+	_subtab_pointer_last_x = pointer_x
+
+
+func _move_upgrade_subtab_pointer(pointer_x: float) -> void:
+	if not _subtab_dragging:
+		var threshold: float = SUBTAB_DRAG_THRESHOLD_PT * _ui_scale(get_viewport_rect().size)
+		if absf(pointer_x - _subtab_pointer_start_x) < threshold:
+			return
+		_subtab_dragging = true
+	var delta_x: float = pointer_x - _subtab_pointer_last_x
+	_subtab_pointer_last_x = pointer_x
+	_scroll_upgrade_subtabs_by(-delta_x)
+
+
+func _finish_upgrade_subtab_pointer(pointer_position: Vector2) -> void:
+	if not _subtab_pointer_active:
+		return
+	var should_select: bool = not _subtab_dragging
+	_subtab_pointer_active = false
+	_subtab_dragging = false
+	if should_select:
+		var scope_id: String = _upgrade_scope_at_local_position(pointer_position)
+		if not scope_id.is_empty():
+			_select_upgrade_scope(scope_id)
+
+
+func _upgrade_scope_at_local_position(pointer_position: Vector2) -> String:
+	var content_position: Vector2 = pointer_position + Vector2(float(upgrade_subtab_scroll.scroll_horizontal), 0.0)
+	for scope_id in upgrade_subtab_buttons.keys():
+		var btn: Button = upgrade_subtab_buttons.get(scope_id) as Button
+		if btn != null and btn.visible and Rect2(btn.position, btn.size).has_point(content_position):
+			return String(scope_id)
+	return ""
+
+
+func _scroll_upgrade_subtabs_by(delta_x: float) -> void:
 	if upgrade_subtab_scroll == null:
 		return
 	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
 	var max_scroll: float = maxf(0.0, horizontal_bar.max_value - horizontal_bar.page)
-	var step: float = maxf(90.0 * _ui_scale(get_viewport_rect().size), upgrade_subtab_scroll.size.x * 0.55)
-	var target: float = clampf(float(upgrade_subtab_scroll.scroll_horizontal) + step * float(direction), 0.0, max_scroll)
+	var target: float = clampf(float(upgrade_subtab_scroll.scroll_horizontal) + delta_x, 0.0, max_scroll)
 	upgrade_subtab_scroll.scroll_horizontal = int(round(target))
-	call_deferred("_refresh_upgrade_subtab_arrows")
 
 
 func _refresh() -> void:
@@ -150,8 +226,8 @@ func _refresh() -> void:
 		return
 	_clear_list()
 	_refresh_tabs()
-	if upgrade_subtab_row != null:
-		upgrade_subtab_row.visible = _selected_tab == TAB_PRICE
+	if upgrade_subtab_viewport != null:
+		upgrade_subtab_viewport.visible = _selected_tab == TAB_PRICE
 	_refresh_upgrade_subtabs()
 	match _selected_tab:
 		TAB_SCENE:
@@ -161,7 +237,6 @@ func _refresh() -> void:
 		_:
 			_build_upgrade_buttons()
 	apply_layout(get_viewport_rect().size)
-	call_deferred("_refresh_upgrade_subtab_arrows")
 
 
 func _build_upgrade_buttons() -> void:
@@ -186,10 +261,36 @@ func _build_scene_buttons() -> void:
 func _build_helper_buttons() -> void:
 	for row in ConfigDB.get_helpers():
 		var id: String = String(row.get("id", ""))
+		if GameState.has_helper(id):
+			_add_owned_helper_row(row)
+			continue
 		var btn: Button = _make_list_button(_helper_button_text(row))
 		btn.disabled = _upgrade_system() == null or not _upgrade_system().can_buy_helper(id)
 		btn.pressed.connect(_on_buy_helper_pressed.bind(id))
 		list.add_child(btn)
+
+
+func _add_owned_helper_row(row: Dictionary) -> void:
+	var helper_id: String = String(row.get("id", ""))
+	var row_container: HBoxContainer = HBoxContainer.new()
+	row_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row_container.set_meta("helper_list_row", true)
+	list.add_child(row_container)
+
+	var info_button: Button = _make_list_button(_helper_button_text(row))
+	info_button.disabled = true
+	info_button.set_meta("helper_info", true)
+	row_container.add_child(info_button)
+
+	var active: bool = GameState.is_helper_active(helper_id)
+	var toggle_button: Button = Button.new()
+	toggle_button.text = "下阵" if active else "上阵"
+	toggle_button.tooltip_text = "让该帮手停止工作" if active else "让该帮手进入当前场景工作"
+	toggle_button.disabled = _scene_transitioning
+	toggle_button.set_meta("helper_toggle", true)
+	toggle_button.set_meta("helper_active", active)
+	toggle_button.pressed.connect(_on_helper_active_pressed.bind(helper_id))
+	row_container.add_child(toggle_button)
 
 
 func _make_list_button(text: String) -> Button:
@@ -211,6 +312,20 @@ func _on_buy_helper_pressed(helper_id: String) -> void:
 	var system: UpgradeSystem = _upgrade_system()
 	if system != null:
 		system.buy_helper(helper_id)
+
+
+func _on_helper_active_pressed(helper_id: String) -> void:
+	GameState.set_helper_active(helper_id, not GameState.is_helper_active(helper_id))
+
+
+func _on_scene_transition_started() -> void:
+	_scene_transitioning = true
+	_refresh()
+
+
+func _on_scene_transition_finished(_scene_id: String) -> void:
+	_scene_transitioning = false
+	_refresh()
 
 
 func _upgrade_button_text(row: Dictionary, include_scope: bool = true) -> String:
@@ -259,10 +374,10 @@ func _helper_button_text(row: Dictionary) -> String:
 
 
 func _helper_owned_status(row: Dictionary) -> String:
-	var scenes: Array = row.get("scenes", [])
-	if scenes.has(GameState.current_scene_id):
+	var helper_id: String = String(row.get("id", ""))
+	if GameState.is_helper_active(helper_id):
 		return "工作中"
-	return "已拥有"
+	return "已下阵"
 
 
 func _upgrades_for_selected_scope() -> Array:
@@ -322,6 +437,8 @@ func _requirement_names(row: Dictionary) -> String:
 
 
 func _scene_names(scene_ids: Array) -> String:
+	if scene_ids.is_empty():
+		return "全场景"
 	var names: Array = []
 	for scene_id in scene_ids:
 		names.append(ConfigDB.get_scene_name(String(scene_id)))
@@ -345,17 +462,7 @@ func _refresh_upgrade_subtabs() -> void:
 	for scope_id in upgrade_subtab_buttons.keys():
 		var btn: Button = upgrade_subtab_buttons.get(scope_id) as Button
 		if btn != null:
-			btn.disabled = String(scope_id) == _selected_upgrade_scope
-
-
-func _refresh_upgrade_subtab_arrows() -> void:
-	if upgrade_subtab_scroll == null or upgrade_subtab_left_button == null or upgrade_subtab_right_button == null:
-		return
-	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
-	var max_scroll: float = maxf(0.0, horizontal_bar.max_value - horizontal_bar.page)
-	var current_scroll: float = float(upgrade_subtab_scroll.scroll_horizontal)
-	upgrade_subtab_left_button.disabled = current_scroll <= 1.0
-	upgrade_subtab_right_button.disabled = current_scroll >= max_scroll - 1.0
+			btn.set_meta("selected_subtab", String(scope_id) == _selected_upgrade_scope)
 
 
 func _upgrade_system() -> UpgradeSystem:
@@ -368,14 +475,8 @@ func apply_layout(viewport_size: Vector2) -> void:
 		panel_container.add_theme_stylebox_override("panel", _panel_style(scale))
 	if tab_bar != null:
 		tab_bar.add_theme_constant_override("separation", int(5.0 * scale))
-	if upgrade_subtab_row != null:
-		upgrade_subtab_row.add_theme_constant_override("separation", int(4.0 * scale))
-	if upgrade_subtab_scroll != null:
-		upgrade_subtab_scroll.custom_minimum_size = Vector2(0.0, 28.0 * scale)
-	if upgrade_subtab_left_button != null:
-		_style_upgrade_subtab_arrow(upgrade_subtab_left_button, scale)
-	if upgrade_subtab_right_button != null:
-		_style_upgrade_subtab_arrow(upgrade_subtab_right_button, scale)
+	if upgrade_subtab_viewport != null:
+		upgrade_subtab_viewport.custom_minimum_size = Vector2(0.0, 28.0 * scale)
 	if upgrade_subtab_bar != null:
 		upgrade_subtab_bar.add_theme_constant_override("separation", int(4.0 * scale))
 		for child in upgrade_subtab_bar.get_children():
@@ -392,17 +493,39 @@ func apply_layout(viewport_size: Vector2) -> void:
 		list.add_theme_constant_override("separation", int(5.0 * scale))
 	for child in list.get_children():
 		var btn: Button = child as Button
-		if btn == null:
+		if btn != null:
+			_style_list_button(btn, scale)
 			continue
-		btn.custom_minimum_size = Vector2(0.0, 38.0 * scale)
-		btn.add_theme_font_size_override("font_size", int(12.0 * scale))
-		btn.add_theme_color_override("font_color", Color(0.18, 0.15, 0.13, 1.0))
-		btn.add_theme_color_override("font_disabled_color", Color(0.38, 0.34, 0.31, 1.0))
-		btn.add_theme_color_override("font_hover_color", Color(0.08, 0.22, 0.14, 1.0))
-		btn.add_theme_stylebox_override("normal", _button_style(Color(1.0, 0.96, 0.76, 1.0), Color(0.5, 0.4, 0.24, 1.0), scale))
-		btn.add_theme_stylebox_override("hover", _button_style(Color(1.0, 0.9, 0.5, 1.0), Color(0.55, 0.42, 0.18, 1.0), scale))
-		btn.add_theme_stylebox_override("disabled", _button_style(Color(0.78, 0.76, 0.7, 1.0), Color(0.54, 0.52, 0.48, 1.0), scale))
-	call_deferred("_refresh_upgrade_subtab_arrows")
+		var helper_row: HBoxContainer = child as HBoxContainer
+		if helper_row == null or not bool(helper_row.get_meta("helper_list_row", false)):
+			continue
+		helper_row.custom_minimum_size = Vector2(0.0, 38.0 * scale)
+		helper_row.add_theme_constant_override("separation", int(5.0 * scale))
+		for row_child in helper_row.get_children():
+			var row_button: Button = row_child as Button
+			if row_button != null:
+				_style_list_button(row_button, scale)
+
+
+func _style_list_button(btn: Button, scale: float) -> void:
+	var is_toggle: bool = bool(btn.get_meta("helper_toggle", false))
+	btn.custom_minimum_size = Vector2(56.0 * scale if is_toggle else 0.0, 38.0 * scale)
+	btn.add_theme_font_size_override("font_size", int((11.0 if is_toggle else 12.0) * scale))
+	btn.add_theme_color_override("font_color", Color(0.18, 0.15, 0.13, 1.0))
+	btn.add_theme_color_override("font_disabled_color", Color(0.38, 0.34, 0.31, 1.0))
+	btn.add_theme_color_override("font_hover_color", Color(0.08, 0.22, 0.14, 1.0))
+	if is_toggle:
+		var active: bool = bool(btn.get_meta("helper_active", false))
+		var normal_color: Color = Color(0.95, 0.72, 0.62, 1.0) if active else Color(0.63, 0.88, 0.68, 1.0)
+		var hover_color: Color = Color(1.0, 0.8, 0.7, 1.0) if active else Color(0.72, 0.96, 0.76, 1.0)
+		btn.add_theme_stylebox_override("normal", _button_style(normal_color, Color(0.38, 0.35, 0.29, 1.0), scale))
+		btn.add_theme_stylebox_override("hover", _button_style(hover_color, Color(0.3, 0.38, 0.26, 1.0), scale))
+		btn.add_theme_stylebox_override("pressed", _button_style(Color(0.82, 0.82, 0.68, 1.0), Color(0.3, 0.34, 0.28, 1.0), scale))
+		btn.add_theme_stylebox_override("disabled", _button_style(Color(0.72, 0.7, 0.68, 1.0), Color(0.5, 0.48, 0.46, 1.0), scale))
+		return
+	btn.add_theme_stylebox_override("normal", _button_style(Color(1.0, 0.96, 0.76, 1.0), Color(0.5, 0.4, 0.24, 1.0), scale))
+	btn.add_theme_stylebox_override("hover", _button_style(Color(1.0, 0.9, 0.5, 1.0), Color(0.55, 0.42, 0.18, 1.0), scale))
+	btn.add_theme_stylebox_override("disabled", _button_style(Color(0.78, 0.76, 0.7, 1.0), Color(0.54, 0.52, 0.48, 1.0), scale))
 
 
 func _style_tab_button(btn: Button, scale: float) -> void:
@@ -413,17 +536,16 @@ func _style_tab_button(btn: Button, scale: float) -> void:
 
 
 func _style_upgrade_subtab_button(btn: Button, scale: float) -> void:
+	var selected: bool = bool(btn.get_meta("selected_subtab", false))
 	btn.custom_minimum_size = Vector2(58.0 * scale, 26.0 * scale)
 	btn.add_theme_font_size_override("font_size", int(11.0 * scale))
-	btn.add_theme_color_override("font_color", Color(0.25, 0.2, 0.3, 1.0))
-	btn.add_theme_color_override("font_disabled_color", Color(0.98, 0.95, 1.0, 1.0))
-
-
-func _style_upgrade_subtab_arrow(btn: Button, scale: float) -> void:
-	btn.custom_minimum_size = Vector2(28.0 * scale, 26.0 * scale)
-	btn.add_theme_font_size_override("font_size", int(14.0 * scale))
-	btn.add_theme_color_override("font_color", Color(0.25, 0.2, 0.3, 1.0))
-	btn.add_theme_color_override("font_disabled_color", Color(0.58, 0.55, 0.62, 0.7))
+	btn.add_theme_color_override("font_color", Color(0.98, 0.95, 1.0, 1.0) if selected else Color(0.25, 0.2, 0.3, 1.0))
+	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
+	var normal_color: Color = Color(0.32, 0.27, 0.43, 1.0) if selected else Color(0.9, 0.87, 0.95, 1.0)
+	var hover_color: Color = Color(0.39, 0.33, 0.5, 1.0)
+	btn.add_theme_stylebox_override("normal", _button_style(normal_color, Color(0.54, 0.46, 0.66, 1.0), scale))
+	btn.add_theme_stylebox_override("hover", _button_style(hover_color, Color(0.65, 0.55, 0.78, 1.0), scale))
+	btn.add_theme_stylebox_override("pressed", _button_style(Color(0.26, 0.22, 0.36, 1.0), Color(0.65, 0.55, 0.78, 1.0), scale))
 
 
 func _ui_scale(viewport_size: Vector2) -> float:

@@ -27,13 +27,13 @@
         {
             "id": "upgrade_global_capacity",
             "name": "通用场地容量",
-            "description": "每级使所有场景的同屏产物上限增加 1。",
+            "description": "每级使所有场景的后台产物库存上限增加 100。",
             "type": "global_capacity",
             "scope": "global",
             "max_level": 5,
             "cost_base": 500,
             "cost_growth": 3.0,
-            "effect_per_level": 1,
+            "effect_per_level": 100,
             "requires": []
         },
         {

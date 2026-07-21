@@ -12,6 +12,7 @@ var challenge_title_label: Label
 var challenge_subtitle_label: Label
 var left_scene_button: Button
 var right_scene_button: Button
+var _scene_transitioning: bool = false
 
 
 func _ready() -> void:
@@ -21,6 +22,9 @@ func _ready() -> void:
 	EventBus.bottle_changed.connect(_on_bottle_changed)
 	EventBus.scene_changed.connect(_on_scene_changed)
 	EventBus.scene_unlocked.connect(func(_id: String): _refresh_scene())
+	EventBus.upgrade_purchased.connect(func(_id, _level: int): _refresh_scene())
+	EventBus.scene_transition_started.connect(_on_scene_transition_started)
+	EventBus.scene_transition_finished.connect(_on_scene_transition_finished)
 	_refresh()
 	_refresh_scene()
 	call_deferred("apply_layout", get_viewport_rect().size)
@@ -89,12 +93,14 @@ func _refresh_scene() -> void:
 	challenge_title_label.text = ConfigDB.get_scene_name(GameState.current_scene_id)
 	challenge_subtitle_label.text = _scene_subtitle()
 	if left_scene_button != null:
-		left_scene_button.disabled = not GameState.can_switch_scene_by_offset(-1)
+		left_scene_button.disabled = _scene_transitioning or not GameState.can_switch_scene_by_offset(-1)
 	if right_scene_button != null:
-		right_scene_button.disabled = not GameState.can_switch_scene_by_offset(1)
+		right_scene_button.disabled = _scene_transitioning or not GameState.can_switch_scene_by_offset(1)
 
 
 func _scene_subtitle() -> String:
+	if _scene_transitioning:
+		return "帮手正在通过传送门"
 	var next_scene_id: String = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, 1)
 	if not next_scene_id.is_empty() and not GameState.is_scene_unlocked(next_scene_id):
 		return "%s未解锁" % ConfigDB.get_scene_name(next_scene_id)
@@ -113,12 +119,22 @@ func _on_scene_changed(_scene_id: String) -> void:
 	_refresh_scene()
 
 
+func _on_scene_transition_started() -> void:
+	_scene_transitioning = true
+	_refresh_scene()
+
+
+func _on_scene_transition_finished(_scene_id: String) -> void:
+	_scene_transitioning = false
+	_refresh_scene()
+
+
 func _on_left_scene_pressed() -> void:
-	GameState.switch_scene_by_offset(-1)
+	EventBus.scene_switch_requested.emit(-1)
 
 
 func _on_right_scene_pressed() -> void:
-	GameState.switch_scene_by_offset(1)
+	EventBus.scene_switch_requested.emit(1)
 
 
 func apply_layout(viewport_size: Vector2) -> void:

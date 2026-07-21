@@ -5,12 +5,17 @@ const BASE_LOGICAL_WIDTH: float = 393.0
 
 var overlay: ColorRect
 var panel: PanelContainer
+var panel_box: VBoxContainer
+var title_label: Label
 var cash_label: Label
+var amount_label: Label
 var amount_input: SpinBox
 var status_label: Label
 var close_button: Button
 var preset_buttons: Array[Button] = []
 var add_button: Button
+var reset_button: Button
+var reset_confirmation: ConfirmationDialog
 
 
 func _ready() -> void:
@@ -52,17 +57,17 @@ func _build() -> void:
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(panel)
 
-	var box: VBoxContainer = VBoxContainer.new()
-	panel.add_child(box)
+	panel_box = VBoxContainer.new()
+	panel.add_child(panel_box)
 
 	var title_row: HBoxContainer = HBoxContainer.new()
-	box.add_child(title_row)
+	panel_box.add_child(title_row)
 
-	var title: Label = Label.new()
-	title.text = "GM 调试面板"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title_row.add_child(title)
+	title_label = Label.new()
+	title_label.text = "GM 调试面板"
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title_row.add_child(title_label)
 
 	close_button = Button.new()
 	close_button.text = "X"
@@ -72,12 +77,12 @@ func _build() -> void:
 
 	cash_label = Label.new()
 	cash_label.text = "当前现金：0 元"
-	box.add_child(cash_label)
+	panel_box.add_child(cash_label)
 
 	var amount_row: HBoxContainer = HBoxContainer.new()
-	box.add_child(amount_row)
+	panel_box.add_child(amount_row)
 
-	var amount_label: Label = Label.new()
+	amount_label = Label.new()
 	amount_label.text = "自定义金额"
 	amount_row.add_child(amount_label)
 
@@ -91,7 +96,7 @@ func _build() -> void:
 	amount_row.add_child(amount_input)
 
 	var preset_row: HBoxContainer = HBoxContainer.new()
-	box.add_child(preset_row)
+	panel_box.add_child(preset_row)
 	var presets: Array = [100.0, 1000.0, 10000.0, 1000000.0]
 	for preset in presets:
 		var amount: float = float(preset)
@@ -106,17 +111,36 @@ func _build() -> void:
 	add_button = Button.new()
 	add_button.text = "增加自定义金额"
 	add_button.pressed.connect(_on_add_custom_pressed)
-	box.add_child(add_button)
+	panel_box.add_child(add_button)
+
+	var separator: HSeparator = HSeparator.new()
+	panel_box.add_child(separator)
+
+	reset_button = Button.new()
+	reset_button.text = "重置全部数据"
+	reset_button.tooltip_text = "清空现金、回收物、升级、场景、帮手和场景库存"
+	reset_button.pressed.connect(_on_reset_requested)
+	panel_box.add_child(reset_button)
 
 	status_label = Label.new()
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status_label.text = "F1 开关面板，Esc 关闭"
-	box.add_child(status_label)
+	panel_box.add_child(status_label)
+
+	reset_confirmation = ConfirmationDialog.new()
+	reset_confirmation.title = "确认重置"
+	reset_confirmation.dialog_text = "确定要清空全部游戏数据吗？\n此操作无法撤销。"
+	reset_confirmation.ok_button_text = "确认重置"
+	reset_confirmation.cancel_button_text = "取消"
+	reset_confirmation.confirmed.connect(_reset_all_data)
+	add_child(reset_confirmation)
 
 
 func _set_open(is_open: bool) -> void:
 	visible = is_open
 	if not is_open:
+		if reset_confirmation != null:
+			reset_confirmation.hide()
 		return
 	_refresh_cash()
 	status_label.text = "F1 开关面板，Esc 关闭"
@@ -135,6 +159,22 @@ func _add_money(amount: float) -> void:
 	GameState.add_currency(amount)
 	SaveManager.save_game()
 	status_label.text = "已增加 %s 元" % BigNumber.format(amount)
+	_refresh_cash()
+
+
+func _on_reset_requested() -> void:
+	if reset_confirmation == null:
+		return
+	var scale: float = maxf(1.0, get_viewport_rect().size.x / BASE_LOGICAL_WIDTH)
+	reset_confirmation.popup_centered(Vector2i(int(330.0 * scale), int(190.0 * scale)))
+
+
+func _reset_all_data() -> void:
+	SaveManager.delete_save()
+	GameState.reset_to_default()
+	SaveManager.save_game()
+	amount_input.value = 1000.0
+	status_label.text = "所有游戏数据已重置"
 	_refresh_cash()
 
 
@@ -164,21 +204,35 @@ func apply_layout(viewport_size: Vector2) -> void:
 	if panel == null:
 		return
 	var scale: float = maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
-	var panel_width: float = minf(340.0 * scale, viewport_size.x - 32.0 * scale)
-	var panel_height: float = 250.0 * scale
+	var panel_width: float = minf(370.0 * scale, viewport_size.x - 20.0 * scale)
+	var panel_height: float = 370.0 * scale
 	panel.size = Vector2(panel_width, panel_height)
 	panel.position = (viewport_size - panel.size) * 0.5
 	panel.add_theme_stylebox_override("panel", _panel_style(scale))
-	close_button.custom_minimum_size = Vector2(30.0 * scale, 30.0 * scale)
-	close_button.add_theme_font_size_override("font_size", int(13.0 * scale))
-	cash_label.add_theme_font_size_override("font_size", int(15.0 * scale))
-	amount_input.custom_minimum_size = Vector2(0.0, 34.0 * scale)
-	add_button.custom_minimum_size = Vector2(0.0, 36.0 * scale)
-	add_button.add_theme_font_size_override("font_size", int(13.0 * scale))
-	status_label.add_theme_font_size_override("font_size", int(11.0 * scale))
+	panel_box.add_theme_constant_override("separation", int(8.0 * scale))
+	title_label.add_theme_font_size_override("font_size", int(20.0 * scale))
+	title_label.add_theme_color_override("font_color", Color(0.1, 0.16, 0.14, 1.0))
+	close_button.custom_minimum_size = Vector2(38.0 * scale, 38.0 * scale)
+	close_button.add_theme_font_size_override("font_size", int(16.0 * scale))
+	cash_label.add_theme_font_size_override("font_size", int(18.0 * scale))
+	cash_label.add_theme_color_override("font_color", Color(0.14, 0.2, 0.18, 1.0))
+	amount_label.add_theme_font_size_override("font_size", int(16.0 * scale))
+	amount_label.add_theme_color_override("font_color", Color(0.18, 0.23, 0.21, 1.0))
+	amount_input.custom_minimum_size = Vector2(0.0, 44.0 * scale)
+	amount_input.add_theme_font_size_override("font_size", int(16.0 * scale))
+	amount_input.get_line_edit().add_theme_font_size_override("font_size", int(16.0 * scale))
+	add_button.custom_minimum_size = Vector2(0.0, 44.0 * scale)
+	add_button.add_theme_font_size_override("font_size", int(16.0 * scale))
+	reset_button.custom_minimum_size = Vector2(0.0, 44.0 * scale)
+	reset_button.add_theme_font_size_override("font_size", int(16.0 * scale))
+	reset_button.add_theme_color_override("font_color", Color(0.55, 0.08, 0.08, 1.0))
+	reset_button.add_theme_color_override("font_hover_color", Color(0.72, 0.05, 0.05, 1.0))
+	status_label.add_theme_font_size_override("font_size", int(14.0 * scale))
+	status_label.add_theme_color_override("font_color", Color(0.28, 0.32, 0.3, 1.0))
+	reset_confirmation.add_theme_font_size_override("font_size", int(16.0 * scale))
 	for btn in preset_buttons:
-		btn.custom_minimum_size = Vector2(0.0, 32.0 * scale)
-		btn.add_theme_font_size_override("font_size", int(11.0 * scale))
+		btn.custom_minimum_size = Vector2(0.0, 40.0 * scale)
+		btn.add_theme_font_size_override("font_size", int(14.0 * scale))
 
 
 func _panel_style(scale: float) -> StyleBoxFlat:

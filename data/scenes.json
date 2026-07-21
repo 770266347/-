@@ -8,7 +8,8 @@
             "background": "res://assets/street_pickup_bg_clean.png",
             "spawn_interval_min": 0.65,
             "spawn_interval_max": 1.25,
-            "max_on_screen": 9,
+            "max_inventory": 1000,
+            "max_on_screen": 90,
             "drops": [
                 {
                     "id": "street_plastic_bottle",
@@ -51,7 +52,8 @@
             "background": "res://assets/scenes/bar_bg.svg",
             "spawn_interval_min": 0.75,
             "spawn_interval_max": 1.35,
-            "max_on_screen": 8,
+            "max_inventory": 1200,
+            "max_on_screen": 100,
             "drops": [
                 {
                     "id": "bar_beer_bottle",
@@ -94,7 +96,8 @@
             "background": "res://assets/scenes/night_market_bg.svg",
             "spawn_interval_min": 0.62,
             "spawn_interval_max": 1.15,
-            "max_on_screen": 10,
+            "max_inventory": 1500,
+            "max_on_screen": 120,
             "drops": [
                 {
                     "id": "night_market_milk_tea_cup",
@@ -137,7 +140,8 @@
             "background": "res://assets/scenes/beach_bg.svg",
             "spawn_interval_min": 0.75,
             "spawn_interval_max": 1.25,
-            "max_on_screen": 9,
+            "max_inventory": 1200,
+            "max_on_screen": 100,
             "drops": [
                 {
                     "id": "beach_drink_bottle",
@@ -190,7 +194,8 @@
             "background": "res://assets/scenes/industrial_park_bg.svg",
             "spawn_interval_min": 0.9,
             "spawn_interval_max": 1.5,
-            "max_on_screen": 8,
+            "max_inventory": 1000,
+            "max_on_screen": 90,
             "drops": [
                 {
                     "id": "industrial_plastic_drum",

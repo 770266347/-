@@ -3,16 +3,15 @@
     <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#1f2933" flood-opacity="0.35"/>
   </filter>
   <g filter="url(#shadow)" stroke="#26333d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M23 72 L27 57 L37 57 L41 72" fill="none"/>
-    <path d="M18 38 C15 47 16 56 20 62 C26 66 39 66 45 62 C48 54 48 46 45 38 C39 33 24 33 18 38Z" fill="#5bbfe8"/>
-    <path d="M19 43 L12 52" fill="none"/>
-    <path d="M45 43 L52 51" fill="none"/>
-    <path d="M42 39 L48 57 L41 59" fill="#f0b34f"/>
-    <circle cx="12" cy="52" r="3" fill="#ffd36b"/>
-    <circle cx="52" cy="51" r="3" fill="#ffd36b"/>
+    <path d="M23 72 L27 58 L37 58 L41 72" fill="none"/>
+    <path d="M18 39 C16 47 16 56 20 63 C26 66 39 66 45 63 C48 55 48 47 45 39 C39 34 24 34 18 39Z" fill="#62c56b"/>
+    <path d="M26 37 L26 62 M38 37 L38 62" fill="none" opacity="0.65"/>
+    <rect x="29" y="45" width="7" height="8" rx="2" fill="#fff4b8"/>
+    <path d="M18 44 L11 56 M46 44 L54 56" fill="none"/>
+    <path d="M53 54 L58 68" fill="none"/>
+    <path d="M55 67 L60 70 M55 67 L52 72" fill="none"/>
     <circle cx="32" cy="23" r="14" fill="#fff8e8"/>
-    <path d="M20 19 C24 10 40 9 46 18 L40 21 H20 Z" fill="#ef6a5b"/>
-    <path d="M39 18 H51" fill="none"/>
+    <path d="M21 18 C25 11 40 11 44 19" fill="#f2c94c"/>
     <circle cx="27" cy="25" r="2" fill="#26333d" stroke="none"/>
     <circle cx="38" cy="25" r="2" fill="#26333d" stroke="none"/>
     <path d="M29 31 C32 34 36 34 39 31" fill="none"/>
