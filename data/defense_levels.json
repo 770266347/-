@@ -1,0 +1,200 @@
+{
+    "max_level": 10,
+    "enemy_types": [
+        {
+            "id": "street_punk",
+            "name": "街头混混",
+            "hp": 5,
+            "speed": 32,
+            "base_damage": 7,
+            "visual_scale": 0.88,
+            "sprite": "res://assets/enemies/street_bully.svg",
+            "tint": "#f6d6b8"
+        },
+        {
+            "id": "street_bully",
+            "name": "街头恶霸",
+            "hp": 11,
+            "speed": 26,
+            "base_damage": 10,
+            "visual_scale": 1.0,
+            "sprite": "res://assets/enemies/street_bully.svg",
+            "tint": "#ffffff"
+        },
+        {
+            "id": "gang_runner",
+            "name": "帮派快手",
+            "hp": 8,
+            "speed": 39,
+            "base_damage": 8,
+            "visual_scale": 0.9,
+            "sprite": "res://assets/enemies/gang_enforcer.svg",
+            "tint": "#c9e7ff"
+        },
+        {
+            "id": "gang_enforcer",
+            "name": "帮派打手",
+            "hp": 20,
+            "speed": 22,
+            "base_damage": 14,
+            "visual_scale": 1.08,
+            "sprite": "res://assets/enemies/gang_enforcer.svg",
+            "tint": "#ffffff"
+        },
+        {
+            "id": "armored_bully",
+            "name": "护具恶霸",
+            "hp": 38,
+            "speed": 16,
+            "base_damage": 20,
+            "visual_scale": 1.16,
+            "sprite": "res://assets/enemies/gang_enforcer.svg",
+            "tint": "#c6c9c7"
+        },
+        {
+            "id": "city_overlord",
+            "name": "霸街头目",
+            "hp": 180,
+            "speed": 8,
+            "base_damage": 45,
+            "visual_scale": 1.72,
+            "boss": true,
+            "sprite": "res://assets/enemies/city_overlord.svg",
+            "tint": "#ffffff"
+        }
+    ],
+    "levels": [
+        {
+            "id": 1,
+            "name": "街口骚动",
+            "hp_multiplier": 1.0,
+            "speed_multiplier": 1.0,
+            "damage_multiplier": 1.0,
+            "wave_gap": 2.0,
+            "waves": [
+                {"spawn_interval": 1.2, "groups": [{"enemy_id": "street_punk", "count": 5}]},
+                {"spawn_interval": 1.05, "groups": [{"enemy_id": "street_punk", "count": 4}, {"enemy_id": "street_bully", "count": 2}]}
+            ]
+        },
+        {
+            "id": 2,
+            "name": "巷尾堵截",
+            "hp_multiplier": 1.08,
+            "speed_multiplier": 1.0,
+            "damage_multiplier": 1.0,
+            "wave_gap": 2.0,
+            "waves": [
+                {"spawn_interval": 1.05, "groups": [{"enemy_id": "street_punk", "count": 6}]},
+                {"spawn_interval": 1.0, "groups": [{"enemy_id": "street_punk", "count": 5}, {"enemy_id": "street_bully", "count": 2}]},
+                {"spawn_interval": 0.95, "groups": [{"enemy_id": "street_bully", "count": 3}]}
+            ]
+        },
+        {
+            "id": 3,
+            "name": "夜市闹事",
+            "hp_multiplier": 1.15,
+            "speed_multiplier": 1.04,
+            "damage_multiplier": 1.05,
+            "wave_gap": 1.9,
+            "waves": [
+                {"spawn_interval": 0.95, "groups": [{"enemy_id": "street_punk", "count": 6}, {"enemy_id": "gang_runner", "count": 2}]},
+                {"spawn_interval": 0.9, "groups": [{"enemy_id": "gang_runner", "count": 5}]},
+                {"spawn_interval": 0.92, "groups": [{"enemy_id": "street_bully", "count": 4}, {"enemy_id": "gang_runner", "count": 3}]}
+            ]
+        },
+        {
+            "id": 4,
+            "name": "酒吧围堵",
+            "hp_multiplier": 1.24,
+            "speed_multiplier": 1.04,
+            "damage_multiplier": 1.08,
+            "wave_gap": 1.8,
+            "waves": [
+                {"spawn_interval": 0.95, "groups": [{"enemy_id": "street_bully", "count": 5}]},
+                {"spawn_interval": 0.88, "groups": [{"enemy_id": "gang_runner", "count": 5}, {"enemy_id": "street_bully", "count": 3}]},
+                {"spawn_interval": 0.92, "groups": [{"enemy_id": "gang_enforcer", "count": 3}, {"enemy_id": "street_bully", "count": 3}]}
+            ]
+        },
+        {
+            "id": 5,
+            "name": "海滩冲突",
+            "hp_multiplier": 1.32,
+            "speed_multiplier": 1.06,
+            "damage_multiplier": 1.12,
+            "wave_gap": 1.8,
+            "waves": [
+                {"spawn_interval": 0.88, "groups": [{"enemy_id": "street_punk", "count": 8}, {"enemy_id": "gang_runner", "count": 3}]},
+                {"spawn_interval": 0.9, "groups": [{"enemy_id": "street_bully", "count": 5}, {"enemy_id": "gang_enforcer", "count": 2}]},
+                {"spawn_interval": 0.86, "groups": [{"enemy_id": "gang_runner", "count": 5}, {"enemy_id": "gang_enforcer", "count": 3}]}
+            ]
+        },
+        {
+            "id": 6,
+            "name": "工业园拦路",
+            "hp_multiplier": 1.42,
+            "speed_multiplier": 1.06,
+            "damage_multiplier": 1.16,
+            "wave_gap": 1.7,
+            "waves": [
+                {"spawn_interval": 0.9, "groups": [{"enemy_id": "street_bully", "count": 6}, {"enemy_id": "gang_enforcer", "count": 2}]},
+                {"spawn_interval": 0.88, "groups": [{"enemy_id": "gang_enforcer", "count": 4}]},
+                {"spawn_interval": 0.92, "groups": [{"enemy_id": "armored_bully", "count": 2}, {"enemy_id": "gang_runner", "count": 5}]}
+            ]
+        },
+        {
+            "id": 7,
+            "name": "快手突袭",
+            "hp_multiplier": 1.52,
+            "speed_multiplier": 1.1,
+            "damage_multiplier": 1.2,
+            "wave_gap": 1.6,
+            "waves": [
+                {"spawn_interval": 0.78, "groups": [{"enemy_id": "gang_runner", "count": 10}]},
+                {"spawn_interval": 0.82, "groups": [{"enemy_id": "gang_runner", "count": 7}, {"enemy_id": "street_bully", "count": 4}]},
+                {"spawn_interval": 0.86, "groups": [{"enemy_id": "gang_enforcer", "count": 4}, {"enemy_id": "armored_bully", "count": 2}]}
+            ]
+        },
+        {
+            "id": 8,
+            "name": "恶霸集结",
+            "hp_multiplier": 1.64,
+            "speed_multiplier": 1.08,
+            "damage_multiplier": 1.25,
+            "wave_gap": 1.6,
+            "waves": [
+                {"spawn_interval": 0.86, "groups": [{"enemy_id": "street_bully", "count": 8}, {"enemy_id": "gang_enforcer", "count": 3}]},
+                {"spawn_interval": 0.88, "groups": [{"enemy_id": "armored_bully", "count": 3}, {"enemy_id": "gang_runner", "count": 6}]},
+                {"spawn_interval": 0.82, "groups": [{"enemy_id": "gang_enforcer", "count": 6}, {"enemy_id": "armored_bully", "count": 3}]}
+            ]
+        },
+        {
+            "id": 9,
+            "name": "全城围攻",
+            "hp_multiplier": 1.78,
+            "speed_multiplier": 1.1,
+            "damage_multiplier": 1.3,
+            "wave_gap": 1.5,
+            "waves": [
+                {"spawn_interval": 0.78, "groups": [{"enemy_id": "street_punk", "count": 8}, {"enemy_id": "gang_runner", "count": 6}]},
+                {"spawn_interval": 0.84, "groups": [{"enemy_id": "street_bully", "count": 7}, {"enemy_id": "gang_enforcer", "count": 5}]},
+                {"spawn_interval": 0.86, "groups": [{"enemy_id": "armored_bully", "count": 5}, {"enemy_id": "gang_enforcer", "count": 5}]},
+                {"spawn_interval": 0.75, "groups": [{"enemy_id": "gang_runner", "count": 8}, {"enemy_id": "armored_bully", "count": 3}]}
+            ]
+        },
+        {
+            "id": 10,
+            "name": "头目决战",
+            "hp_multiplier": 1.45,
+            "speed_multiplier": 1.05,
+            "damage_multiplier": 1.35,
+            "wave_gap": 1.8,
+            "boss_level": true,
+            "waves": [
+                {"spawn_interval": 0.76, "groups": [{"enemy_id": "street_punk", "count": 10}, {"enemy_id": "gang_runner", "count": 6}]},
+                {"spawn_interval": 0.82, "groups": [{"enemy_id": "street_bully", "count": 7}, {"enemy_id": "gang_enforcer", "count": 5}]},
+                {"spawn_interval": 0.86, "groups": [{"enemy_id": "armored_bully", "count": 4}, {"enemy_id": "gang_enforcer", "count": 5}]},
+                {"spawn_interval": 1.0, "groups": [{"enemy_id": "gang_enforcer", "count": 2}, {"enemy_id": "city_overlord", "count": 1}]}
+            ]
+        }
+    ]
+}

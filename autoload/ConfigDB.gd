@@ -11,6 +11,10 @@ var scenes: Array = []
 var scenes_by_id: Dictionary = {}
 var drops_by_id: Dictionary = {}
 var default_scene_id: String = "street"
+var defense_levels: Array = []
+var defense_levels_by_id: Dictionary = {}
+var defense_enemies_by_id: Dictionary = {}
+var defense_max_level: int = 0
 
 
 func _ready() -> void:
@@ -18,6 +22,7 @@ func _ready() -> void:
     _load_upgrades()
     _load_helpers()
     _load_scenes()
+    _load_defense_levels()
     print("[ConfigDB] loaded in %d ms" % (Time.get_ticks_msec() - t0))
 
 
@@ -83,6 +88,28 @@ func _load_scenes() -> void:
                 continue
             drop["scene_id"] = id
             drops_by_id[drop_id] = drop
+
+
+func _load_defense_levels() -> void:
+    var data = _read_json(DATA_DIR + "defense_levels.json")
+    defense_levels.clear()
+    defense_levels_by_id.clear()
+    defense_enemies_by_id.clear()
+    defense_max_level = 0
+    if data == null:
+        return
+    for enemy in data.get("enemy_types", []):
+        var enemy_id: String = String(enemy.get("id", ""))
+        if not enemy_id.is_empty():
+            defense_enemies_by_id[enemy_id] = enemy
+    for level in data.get("levels", []):
+        var level_id: int = int(level.get("id", 0))
+        if level_id <= 0:
+            continue
+        defense_levels.append(level)
+        defense_levels_by_id[level_id] = level
+        defense_max_level = maxi(defense_max_level, level_id)
+    defense_max_level = mini(defense_max_level, int(data.get("max_level", defense_max_level)))
 
 
 func get_upgrades() -> Array:
@@ -192,6 +219,22 @@ func get_default_unlocked_drops() -> Array:
             if bool(drop.get("default_unlocked", false)):
                 out.append(String(drop.get("id", "")))
     return out
+
+
+func get_defense_levels() -> Array:
+    return defense_levels
+
+
+func get_defense_level(level_id: int) -> Dictionary:
+    return defense_levels_by_id.get(level_id, {})
+
+
+func get_defense_enemy(enemy_id: String) -> Dictionary:
+    return defense_enemies_by_id.get(enemy_id, {})
+
+
+func get_defense_max_level() -> int:
+    return defense_max_level
 
 
 func _normalize_id(id):

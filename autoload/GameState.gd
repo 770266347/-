@@ -1,7 +1,7 @@
 extends Node
 ## Runtime mutable player state. Persisted by SaveManager.
 
-const SAVE_VERSION: int = 7
+const SAVE_VERSION: int = 10
 const BASE_BOTTLE_VALUE: float = 1.0
 const GLOBAL_VALUE_UPGRADE_ID: String = "upgrade_global_value"
 const GLOBAL_SPAWN_UPGRADE_ID: String = "upgrade_global_spawn"
@@ -26,6 +26,13 @@ var purchased_helpers: Dictionary = {}
 var active_helpers: Dictionary = {}
 ## scene_id -> Array[drop_id]
 var scene_drop_inventories: Dictionary = {}
+## scene_id -> Array[serial], aligned with scene_drop_inventories
+var scene_drop_serials: Dictionary = {}
+var next_scene_drop_serial: int = 1
+var defense_highest_unlocked_level: int = 1
+var defense_cleared_levels: Dictionary = {}
+## drop_id -> lifetime collected amount
+var drop_collection_counts: Dictionary = {}
 
 
 func reset_to_default() -> void:
@@ -41,6 +48,11 @@ func reset_to_default() -> void:
     purchased_helpers.clear()
     active_helpers.clear()
     scene_drop_inventories.clear()
+    scene_drop_serials.clear()
+    next_scene_drop_serial = 1
+    defense_highest_unlocked_level = 1
+    defense_cleared_levels.clear()
+    drop_collection_counts.clear()
     EventBus.bottle_changed.emit(bottles, 0)
     EventBus.currency_changed.emit(currency, 0.0)
     EventBus.scene_changed.emit(current_scene_id)
@@ -63,6 +75,22 @@ func add_currency(amount: float) -> void:
     if amount > 0.0:
         total_earned += amount
     EventBus.currency_changed.emit(currency, amount)
+
+
+func record_drop_collection(drop_id: String, amount: int) -> void:
+    if amount <= 0 or ConfigDB.get_drop(drop_id).is_empty():
+        return
+    var new_amount: int = get_drop_collection_count(drop_id) + amount
+    drop_collection_counts[drop_id] = new_amount
+    EventBus.drop_collection_count_changed.emit(drop_id, new_amount, amount)
+
+
+func get_drop_collection_count(drop_id: String) -> int:
+    return maxi(0, int(drop_collection_counts.get(drop_id, 0)))
+
+
+func get_drop_collection_counts() -> Dictionary:
+    return drop_collection_counts.duplicate()
 
 
 func can_afford(cost: float) -> bool:
@@ -171,6 +199,19 @@ func get_scene_drop_ids(scene_id: String) -> Array:
     return inventory.duplicate()
 
 
+func get_scene_drop_serial(scene_id: String, index: int) -> int:
+    var inventory: Array = scene_drop_inventories.get(scene_id, [])
+    if index < 0 or index >= inventory.size():
+        return 0
+    var serials: Array = _ensure_scene_drop_serials(scene_id, inventory.size())
+    return int(serials[index])
+
+
+func get_scene_drop_serials(scene_id: String) -> Array:
+    var inventory: Array = scene_drop_inventories.get(scene_id, [])
+    return _ensure_scene_drop_serials(scene_id, inventory.size()).duplicate()
+
+
 func get_scene_drop_count(scene_id: String) -> int:
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     return inventory.size()
@@ -194,6 +235,9 @@ func add_scene_drop(scene_id: String, drop_id: String) -> bool:
         return false
     inventory.append(drop_id)
     scene_drop_inventories[scene_id] = inventory
+    var serials: Array = _ensure_scene_drop_serials(scene_id, inventory.size() - 1)
+    serials.append(_allocate_scene_drop_serial())
+    scene_drop_serials[scene_id] = serials
     EventBus.scene_inventory_changed.emit(scene_id)
     return true
 
@@ -203,8 +247,35 @@ func consume_scene_drop(scene_id: String, drop_id: String) -> bool:
     var index: int = inventory.find(drop_id)
     if index < 0:
         return false
+    return _consume_scene_drop_at(scene_id, index)
+
+
+func consume_scene_drop_instance(scene_id: String, serial: int, expected_drop_id: String = "") -> bool:
+    if serial <= 0:
+        return false
+    var inventory: Array = scene_drop_inventories.get(scene_id, [])
+    var serials: Array = _ensure_scene_drop_serials(scene_id, inventory.size())
+    var index: int = serials.find(serial)
+    if index < 0 or index >= inventory.size():
+        return false
+    if not expected_drop_id.is_empty() and String(inventory[index]) != expected_drop_id:
+        return false
+    return _consume_scene_drop_at(scene_id, index)
+
+
+func _consume_scene_drop_at(scene_id: String, index: int) -> bool:
+    var inventory: Array = scene_drop_inventories.get(scene_id, [])
+    if index < 0 or index >= inventory.size():
+        return false
+    var serials: Array = _ensure_scene_drop_serials(scene_id, inventory.size())
     inventory.remove_at(index)
-    scene_drop_inventories[scene_id] = inventory
+    serials.remove_at(index)
+    if inventory.is_empty():
+        scene_drop_inventories.erase(scene_id)
+        scene_drop_serials.erase(scene_id)
+    else:
+        scene_drop_inventories[scene_id] = inventory
+        scene_drop_serials[scene_id] = serials
     EventBus.scene_inventory_changed.emit(scene_id)
     return true
 
@@ -241,6 +312,26 @@ func set_helper_active(helper_id: String, active: bool) -> bool:
     return true
 
 
+func is_defense_level_unlocked(level_id: int) -> bool:
+    return level_id >= 1 and level_id <= defense_highest_unlocked_level and level_id <= ConfigDB.get_defense_max_level()
+
+
+func is_defense_level_cleared(level_id: int) -> bool:
+    return bool(defense_cleared_levels.get(level_id, false))
+
+
+func complete_defense_level(level_id: int) -> bool:
+    if not is_defense_level_unlocked(level_id) or ConfigDB.get_defense_level(level_id).is_empty():
+        return false
+    var first_clear: bool = not is_defense_level_cleared(level_id)
+    defense_cleared_levels[level_id] = true
+    if level_id < ConfigDB.get_defense_max_level():
+        defense_highest_unlocked_level = maxi(defense_highest_unlocked_level, level_id + 1)
+    if first_clear:
+        EventBus.defense_level_completed.emit(level_id)
+    return first_clear
+
+
 func to_dict() -> Dictionary:
     return {
         "save_version": save_version,
@@ -255,6 +346,11 @@ func to_dict() -> Dictionary:
         "purchased_helpers": purchased_helpers,
         "active_helpers": active_helpers,
         "scene_drop_inventories": scene_drop_inventories,
+        "scene_drop_serials": scene_drop_serials,
+        "next_scene_drop_serial": next_scene_drop_serial,
+        "defense_highest_unlocked_level": defense_highest_unlocked_level,
+        "defense_cleared_levels": defense_cleared_levels,
+        "drop_collection_counts": drop_collection_counts,
     }
 
 
@@ -276,11 +372,18 @@ func from_dict(d: Dictionary) -> void:
     else:
         active_helpers = purchased_helpers.duplicate()
     scene_drop_inventories = _scene_drop_inventory_dict(d.get("scene_drop_inventories", {}))
+    scene_drop_serials = _scene_drop_serial_dict(d.get("scene_drop_serials", {}))
+    next_scene_drop_serial = maxi(1, int(d.get("next_scene_drop_serial", 1)))
+    defense_highest_unlocked_level = maxi(1, int(d.get("defense_highest_unlocked_level", 1)))
+    defense_cleared_levels = _int_bool_key_dict(d.get("defense_cleared_levels", {}))
+    drop_collection_counts = _string_int_count_dict(d.get("drop_collection_counts", {}))
     _merge_default_unlocked_scenes()
     _merge_default_unlocked_drops()
     _apply_unlock_upgrades_to_state()
     _sanitize_active_helpers()
     _sanitize_scene_drop_inventories()
+    _sanitize_defense_progress()
+    _sanitize_drop_collection_counts()
     if not is_scene_unlocked(current_scene_id):
         current_scene_id = ConfigDB.get_default_scene_id()
     EventBus.bottle_changed.emit(bottles, 0)
@@ -303,6 +406,27 @@ static func _bool_key_dict(d: Dictionary) -> Dictionary:
     var out: Dictionary = {}
     for k in d.keys():
         out[String(k)] = bool(d[k])
+    return out
+
+
+static func _int_bool_key_dict(d: Dictionary) -> Dictionary:
+    var out: Dictionary = {}
+    for k in d.keys():
+        var level_id: int = int(k)
+        if level_id > 0 and bool(d[k]):
+            out[level_id] = true
+    return out
+
+
+static func _string_int_count_dict(value: Variant) -> Dictionary:
+    var out: Dictionary = {}
+    if typeof(value) != TYPE_DICTIONARY:
+        return out
+    var source: Dictionary = value as Dictionary
+    for k in source.keys():
+        var amount: int = maxi(0, int(source[k]))
+        if amount > 0:
+            out[String(k)] = amount
     return out
 
 
@@ -333,6 +457,40 @@ static func _scene_drop_inventory_dict(value: Variant) -> Dictionary:
             drop_ids.append(String(drop_id))
         out[String(scene_id)] = drop_ids
     return out
+
+
+static func _scene_drop_serial_dict(value: Variant) -> Dictionary:
+    var out: Dictionary = {}
+    if typeof(value) != TYPE_DICTIONARY:
+        return out
+    var source: Dictionary = value as Dictionary
+    for scene_id in source.keys():
+        if typeof(source[scene_id]) != TYPE_ARRAY:
+            continue
+        var serials: Array = []
+        for serial in source[scene_id]:
+            serials.append(int(serial))
+        out[String(scene_id)] = serials
+    return out
+
+
+func _allocate_scene_drop_serial() -> int:
+    var serial: int = maxi(1, next_scene_drop_serial)
+    next_scene_drop_serial = serial + 1
+    return serial
+
+
+func _ensure_scene_drop_serials(scene_id: String, inventory_count: int) -> Array:
+    var serials: Array = scene_drop_serials.get(scene_id, [])
+    if serials.size() > inventory_count:
+        serials.resize(inventory_count)
+    while serials.size() < inventory_count:
+        serials.append(_allocate_scene_drop_serial())
+    if serials.is_empty():
+        scene_drop_serials.erase(scene_id)
+    else:
+        scene_drop_serials[scene_id] = serials
+    return serials
 
 
 func _merge_default_unlocked_scenes() -> void:
@@ -372,22 +530,41 @@ func _apply_unlock_upgrades_to_state() -> void:
 
 func _sanitize_scene_drop_inventories() -> void:
     var sanitized: Dictionary = {}
+    var sanitized_serials: Dictionary = {}
+    var used_serials: Dictionary = {}
+    for serial_list_variant in scene_drop_serials.values():
+        if typeof(serial_list_variant) != TYPE_ARRAY:
+            continue
+        for serial_variant in serial_list_variant:
+            var serial: int = int(serial_variant)
+            if serial > 0:
+                next_scene_drop_serial = maxi(next_scene_drop_serial, serial + 1)
     for scene_id_variant in scene_drop_inventories.keys():
         var scene_id: String = String(scene_id_variant)
         if not is_scene_unlocked(scene_id) or ConfigDB.get_scene(scene_id).is_empty():
             continue
         var valid_drop_ids: Array = []
+        var valid_serials: Array = []
+        var source_drop_ids: Array = scene_drop_inventories.get(scene_id_variant, [])
+        var source_serials: Array = scene_drop_serials.get(scene_id, [])
         var capacity: int = get_scene_capacity(scene_id)
-        for drop_id_variant in scene_drop_inventories.get(scene_id_variant, []):
+        for index in range(source_drop_ids.size()):
             if valid_drop_ids.size() >= capacity:
                 break
-            var drop_id: String = String(drop_id_variant)
+            var drop_id: String = String(source_drop_ids[index])
             var drop: Dictionary = ConfigDB.get_drop(drop_id)
             if not drop.is_empty() and is_drop_unlocked(drop_id) and String(drop.get("scene_id", "")) == scene_id:
                 valid_drop_ids.append(drop_id)
+                var serial: int = int(source_serials[index]) if index < source_serials.size() else 0
+                if serial <= 0 or used_serials.has(serial):
+                    serial = _allocate_scene_drop_serial()
+                used_serials[serial] = true
+                valid_serials.append(serial)
         if not valid_drop_ids.is_empty():
             sanitized[scene_id] = valid_drop_ids
+            sanitized_serials[scene_id] = valid_serials
     scene_drop_inventories = sanitized
+    scene_drop_serials = sanitized_serials
 
 
 func _sanitize_active_helpers() -> void:
@@ -397,6 +574,28 @@ func _sanitize_active_helpers() -> void:
         if has_helper(helper_id) and not ConfigDB.get_helper(helper_id).is_empty():
             sanitized[helper_id] = true
     active_helpers = sanitized
+
+
+func _sanitize_defense_progress() -> void:
+    var max_level: int = maxi(1, ConfigDB.get_defense_max_level())
+    defense_highest_unlocked_level = clampi(defense_highest_unlocked_level, 1, max_level)
+    var sanitized: Dictionary = {}
+    for level_id_variant in defense_cleared_levels.keys():
+        var level_id: int = int(level_id_variant)
+        if level_id >= 1 and level_id <= max_level:
+            sanitized[level_id] = true
+            defense_highest_unlocked_level = maxi(defense_highest_unlocked_level, mini(level_id + 1, max_level))
+    defense_cleared_levels = sanitized
+
+
+func _sanitize_drop_collection_counts() -> void:
+    var sanitized: Dictionary = {}
+    for drop_id_variant in drop_collection_counts.keys():
+        var drop_id: String = String(drop_id_variant)
+        var amount: int = maxi(0, int(drop_collection_counts.get(drop_id_variant, 0)))
+        if amount > 0 and not ConfigDB.get_drop(drop_id).is_empty():
+            sanitized[drop_id] = amount
+    drop_collection_counts = sanitized
 
 
 func _upgrade_effect_total(upgrade_id: String) -> float:

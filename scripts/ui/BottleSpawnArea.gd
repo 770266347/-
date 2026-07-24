@@ -26,6 +26,7 @@ const TRANSITION_EMPTY_DELAY: float = 0.35
 const TRANSITION_IDLE: String = "idle"
 const TRANSITION_EXITING: String = "exiting"
 const TRANSITION_ENTERING: String = "entering"
+const DROP_PLACEMENT_MODULUS: int = 2147483647
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _scene_spawn_timers: Dictionary = {}
@@ -40,6 +41,7 @@ var _transition_portal: Control
 var _transition_timer: float = 0.0
 var _drop_input_enabled: bool = true
 var _last_collect_input_msec: int = -COLLECT_INPUT_DEDUP_MS
+var _defense_mode_active: bool = false
 
 
 func _ready() -> void:
@@ -65,12 +67,21 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_scene_production(delta)
+	if _defense_mode_active:
+		return
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
 	if _transition_state != TRANSITION_IDLE:
 		_update_scene_transition(delta)
 		return
 	_update_helpers(delta)
+
+
+func set_defense_mode_active(active: bool) -> void:
+	_defense_mode_active = active
+	_drop_input_enabled = not active
+	if active:
+		_reset_helper_targets()
 
 
 func _build_background() -> void:
@@ -124,17 +135,16 @@ func _apply_scene() -> void:
 
 func _render_current_scene_inventory() -> void:
 	var visible_limit: int = _scene_visible_limit(GameState.current_scene_id)
-	var rendered: int = 0
-	for drop_id in GameState.get_scene_drop_ids(GameState.current_scene_id):
-		if rendered >= visible_limit:
-			break
-		var drop: Dictionary = ConfigDB.get_drop(String(drop_id))
+	var inventory: Array = GameState.get_scene_drop_ids(GameState.current_scene_id)
+	var serials: Array = GameState.get_scene_drop_serials(GameState.current_scene_id)
+	var render_count: int = mini(visible_limit, inventory.size())
+	for index in range(render_count):
+		var drop: Dictionary = ConfigDB.get_drop(String(inventory[index]))
 		if not drop.is_empty():
-			_spawn_drop(drop, false)
-			rendered += 1
+			_spawn_drop(drop, int(serials[index]), false)
 
 
-func _spawn_drop(drop: Dictionary, animate: bool = true) -> void:
+func _spawn_drop(drop: Dictionary, serial: int, animate: bool = true) -> void:
 	if drop.is_empty():
 		return
 
@@ -150,7 +160,8 @@ func _spawn_drop(drop: Dictionary, animate: bool = true) -> void:
 	glow.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	glow.size = item_size * GLOW_SCALE
 	glow.pivot_offset = glow.size * 0.5
-	glow.position = _random_drop_position()
+	var item_position: Vector2 = _drop_position_for_serial(String(drop.get("scene_id", "")), serial)
+	glow.position = item_position - (glow.size - item_size) * 0.5
 	glow.modulate = Color(0.62, 1.0, 0.35, 0.5)
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	glow.set_meta("is_drop_glow", true)
@@ -161,10 +172,11 @@ func _spawn_drop(drop: Dictionary, animate: bool = true) -> void:
 	item.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	item.size = item_size
 	item.pivot_offset = item_size * 0.5
-	item.position = glow.position + (glow.size - item.size) * 0.5
+	item.position = item_position
 	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	item.set_meta("is_drop", true)
 	item.set_meta("drop", drop)
+	item.set_meta("drop_serial", serial)
 	item.set_meta("glow", glow)
 	add_child(item)
 	_update_drop_layer(item, glow)
@@ -194,6 +206,31 @@ func _random_drop_position() -> Vector2:
 	var min_y: float = TOP_RESERVED_PT * scale
 	var max_y: float = maxf(min_y, size.y - drop_size.y - SPAWN_MARGIN_PT * scale)
 	return Vector2(_rng.randf_range(min_x, max_x), _rng.randf_range(min_y, max_y))
+
+
+func _drop_position_for_serial(scene_id: String, serial: int) -> Vector2:
+	if serial <= 0:
+		return _random_drop_position()
+	var placement: Vector2 = _drop_placement_for_serial(scene_id, serial)
+	var scale: float = _ui_scale()
+	var drop_size: Vector2 = _drop_size()
+	var min_x: float = SPAWN_MARGIN_PT * scale
+	var max_x: float = maxf(min_x, size.x - drop_size.x - SPAWN_MARGIN_PT * scale)
+	var min_y: float = TOP_RESERVED_PT * scale
+	var max_y: float = maxf(min_y, size.y - drop_size.y - SPAWN_MARGIN_PT * scale)
+	return Vector2(lerpf(min_x, max_x, placement.x), lerpf(min_y, max_y, placement.y))
+
+
+func _drop_placement_for_serial(scene_id: String, serial: int) -> Vector2:
+	var scene_seed: int = 0
+	for index in range(scene_id.length()):
+		scene_seed = int(posmod(scene_seed * 131 + scene_id.unicode_at(index), DROP_PLACEMENT_MODULUS))
+	var placement_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	placement_rng.seed = int(posmod(
+		scene_seed * 104729 + serial * 1000003 + 97,
+		DROP_PLACEMENT_MODULUS
+	))
+	return Vector2(placement_rng.randf(), placement_rng.randf())
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -260,7 +297,8 @@ func _collect_drop_item(item: TextureRect) -> bool:
 	var drop: Dictionary = item.get_meta("drop", {})
 	var scene_id: String = String(drop.get("scene_id", GameState.current_scene_id))
 	var drop_id: String = String(drop.get("id", ""))
-	if not GameState.consume_scene_drop(scene_id, drop_id):
+	var serial: int = int(item.get_meta("drop_serial", 0))
+	if not GameState.consume_scene_drop_instance(scene_id, serial, drop_id):
 		return false
 	item.set_meta("collected", true)
 	var system: ProductionSystem = get_tree().root.get_node_or_null("Main/Systems/ProductionSystem") as ProductionSystem
@@ -280,8 +318,10 @@ func _despawn_drop(item: TextureRect) -> void:
 	if is_instance_valid(glow):
 		tween.parallel().tween_property(glow, "scale", Vector2(0.45, 0.45), 0.16)
 		tween.parallel().tween_property(glow, "modulate:a", 0.0, 0.16)
-	tween.finished.connect(func(): _free_control(item))
-	tween.finished.connect(func(): _free_control(glow))
+	var instance_ids: Array[int] = [int(item.get_instance_id())]
+	if is_instance_valid(glow):
+		instance_ids.append(int(glow.get_instance_id()))
+	tween.finished.connect(_free_controls_by_instance_id.bind(instance_ids))
 
 
 func _clear_active_drops() -> void:
@@ -298,35 +338,25 @@ func _sync_current_scene_visible_drops() -> void:
 	if _transition_state != TRANSITION_IDLE:
 		return
 	var visible_limit: int = _scene_visible_limit(GameState.current_scene_id)
-	var visible_counts: Dictionary = {}
-	var visible_total: int = 0
+	var visible_serials: Dictionary = {}
 	for child in get_children():
 		var item: TextureRect = child as TextureRect
 		if item == null or item.is_queued_for_deletion():
 			continue
 		if not bool(item.get_meta("is_drop", false)) or bool(item.get_meta("collected", false)):
 			continue
-		var drop: Dictionary = item.get_meta("drop", {})
-		var drop_id: String = String(drop.get("id", ""))
-		visible_counts[drop_id] = int(visible_counts.get(drop_id, 0)) + 1
-		visible_total += 1
-	if visible_total >= visible_limit:
-		return
+		visible_serials[int(item.get_meta("drop_serial", 0))] = true
 
-	var unmatched_visible: Dictionary = visible_counts.duplicate()
-	var slots_remaining: int = visible_limit - visible_total
-	for drop_id_variant in GameState.get_scene_drop_ids(GameState.current_scene_id):
-		var drop_id: String = String(drop_id_variant)
-		var represented: int = int(unmatched_visible.get(drop_id, 0))
-		if represented > 0:
-			unmatched_visible[drop_id] = represented - 1
+	var inventory: Array = GameState.get_scene_drop_ids(GameState.current_scene_id)
+	var serials: Array = GameState.get_scene_drop_serials(GameState.current_scene_id)
+	var target_count: int = mini(visible_limit, inventory.size())
+	for index in range(target_count):
+		var serial: int = int(serials[index])
+		if visible_serials.has(serial):
 			continue
-		var drop: Dictionary = ConfigDB.get_drop(drop_id)
+		var drop: Dictionary = ConfigDB.get_drop(String(inventory[index]))
 		if not drop.is_empty():
-			_spawn_drop(drop)
-			slots_remaining -= 1
-			if slots_remaining <= 0:
-				break
+			_spawn_drop(drop, serial)
 
 
 func _update_scene_production(delta: float) -> void:
@@ -997,14 +1027,15 @@ func _relayout_drops() -> void:
 		var glow: TextureRect = item.get_meta("glow") as TextureRect if item.has_meta("glow") else null
 		item.size = drop_size
 		item.pivot_offset = drop_size * 0.5
+		var drop: Dictionary = item.get_meta("drop", {})
+		var serial: int = int(item.get_meta("drop_serial", 0))
+		item.position = _drop_position_for_serial(String(drop.get("scene_id", "")), serial)
 		if is_instance_valid(glow):
 			glow.size = drop_size * GLOW_SCALE
 			glow.pivot_offset = glow.size * 0.5
-			glow.position = _random_drop_position()
-			item.position = glow.position + (glow.size - item.size) * 0.5
+			glow.position = item.position - (glow.size - item.size) * 0.5
 			_update_drop_layer(item, glow)
 		else:
-			item.position = _random_drop_position()
 			_update_drop_layer(item, null)
 
 
@@ -1042,3 +1073,10 @@ func _inventory_counter_style(scale: float) -> StyleBoxFlat:
 func _free_control(control: Control) -> void:
 	if is_instance_valid(control):
 		control.queue_free()
+
+
+func _free_controls_by_instance_id(instance_ids: Array[int]) -> void:
+	for instance_id in instance_ids:
+		var control: Control = instance_from_id(instance_id) as Control
+		if is_instance_valid(control):
+			control.queue_free()

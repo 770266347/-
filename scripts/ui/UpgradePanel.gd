@@ -7,6 +7,8 @@ const TAB_SCENE: String = "scene"
 const TAB_HELPER: String = "helper"
 const UPGRADE_SCOPE_GLOBAL: String = "global"
 const SUBTAB_DRAG_THRESHOLD_PT: float = 8.0
+const LIST_DRAG_THRESHOLD_PT: float = 8.0
+const LIST_CLICK_DEDUP_MS: int = 90
 
 var panel_container: PanelContainer
 var tab_bar: HBoxContainer
@@ -18,6 +20,9 @@ var upgrade_subtab_scroll: ScrollContainer
 var upgrade_subtab_bar: HBoxContainer
 var upgrade_subtab_input_layer: Control
 var upgrade_subtab_buttons: Dictionary = {}
+var list_viewport: Control
+var list_scroll: ScrollContainer
+var list_input_layer: Control
 var list: VBoxContainer
 var _selected_tab: String = TAB_PRICE
 var _selected_upgrade_scope: String = UPGRADE_SCOPE_GLOBAL
@@ -25,6 +30,11 @@ var _subtab_pointer_active: bool = false
 var _subtab_dragging: bool = false
 var _subtab_pointer_start_x: float = 0.0
 var _subtab_pointer_last_x: float = 0.0
+var _list_pointer_active: bool = false
+var _list_dragging: bool = false
+var _list_pointer_start: Vector2 = Vector2.ZERO
+var _list_pointer_last_y: float = 0.0
+var _last_list_click_msec: int = -LIST_CLICK_DEDUP_MS
 var _scene_transitioning: bool = false
 
 
@@ -95,13 +105,26 @@ func _build() -> void:
 	upgrade_subtab_input_layer.gui_input.connect(_on_upgrade_subtab_overlay_input)
 	upgrade_subtab_viewport.add_child(upgrade_subtab_input_layer)
 
-	var scroll: ScrollContainer = ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(scroll)
+	list_viewport = Control.new()
+	list_viewport.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_viewport.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(list_viewport)
+
+	list_scroll = ScrollContainer.new()
+	list_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	list_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	list_viewport.add_child(list_scroll)
 
 	list = VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
+	list_scroll.add_child(list)
+
+	list_input_layer = Control.new()
+	list_input_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	list_input_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	list_input_layer.gui_input.connect(_on_list_overlay_input)
+	list_viewport.add_child(list_input_layer)
 
 
 func _build_upgrade_subtabs() -> void:
@@ -221,6 +244,113 @@ func _scroll_upgrade_subtabs_by(delta_x: float) -> void:
 	upgrade_subtab_scroll.scroll_horizontal = int(round(target))
 
 
+func _on_list_overlay_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
+		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
+			_scroll_list_by(-48.0 * _ui_scale(get_viewport_rect().size))
+			list_input_layer.accept_event()
+			return
+		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_DOWN and mouse_button.pressed:
+			_scroll_list_by(48.0 * _ui_scale(get_viewport_rect().size))
+			list_input_layer.accept_event()
+			return
+		if mouse_button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mouse_button.pressed:
+			_begin_list_pointer(mouse_button.position)
+		else:
+			_finish_list_pointer(mouse_button.position)
+		list_input_layer.accept_event()
+	elif event is InputEventMouseMotion and _list_pointer_active:
+		var mouse_motion: InputEventMouseMotion = event as InputEventMouseMotion
+		if mouse_motion.button_mask & MOUSE_BUTTON_MASK_LEFT:
+			_move_list_pointer(mouse_motion.position)
+			list_input_layer.accept_event()
+	elif event is InputEventScreenTouch:
+		var touch: InputEventScreenTouch = event as InputEventScreenTouch
+		if touch.pressed:
+			_begin_list_pointer(touch.position)
+		else:
+			_finish_list_pointer(touch.position)
+		list_input_layer.accept_event()
+	elif event is InputEventScreenDrag and _list_pointer_active:
+		var drag: InputEventScreenDrag = event as InputEventScreenDrag
+		_move_list_pointer(drag.position)
+		list_input_layer.accept_event()
+
+
+func _begin_list_pointer(pointer_position: Vector2) -> void:
+	_list_pointer_active = true
+	_list_dragging = false
+	_list_pointer_start = pointer_position
+	_list_pointer_last_y = pointer_position.y
+
+
+func _move_list_pointer(pointer_position: Vector2) -> void:
+	if not _list_dragging:
+		var threshold: float = LIST_DRAG_THRESHOLD_PT * _ui_scale(get_viewport_rect().size)
+		if pointer_position.distance_to(_list_pointer_start) < threshold:
+			return
+		_list_dragging = true
+	var delta_y: float = pointer_position.y - _list_pointer_last_y
+	_list_pointer_last_y = pointer_position.y
+	_scroll_list_by(-delta_y)
+
+
+func _finish_list_pointer(pointer_position: Vector2) -> void:
+	if not _list_pointer_active:
+		return
+	var should_click: bool = not _list_dragging
+	_list_pointer_active = false
+	_list_dragging = false
+	if not should_click:
+		return
+	var now_msec: int = Time.get_ticks_msec()
+	if now_msec - _last_list_click_msec < LIST_CLICK_DEDUP_MS:
+		return
+	var button: Button = _list_button_at_position(pointer_position)
+	if button == null or button.disabled:
+		return
+	_last_list_click_msec = now_msec
+	button.pressed.emit()
+
+
+func _list_button_at_position(pointer_position: Vector2) -> Button:
+	var content_position: Vector2 = pointer_position + Vector2(
+		float(list_scroll.scroll_horizontal),
+		float(list_scroll.scroll_vertical)
+	)
+	return _button_at_position_in_control(list, content_position)
+
+
+func _button_at_position_in_control(parent: Control, position_in_parent: Vector2) -> Button:
+	var children: Array[Node] = parent.get_children()
+	for index in range(children.size() - 1, -1, -1):
+		var control: Control = children[index] as Control
+		if control == null or not control.visible or control.is_queued_for_deletion():
+			continue
+		var local_position: Vector2 = position_in_parent - control.position
+		if not Rect2(Vector2.ZERO, control.size).has_point(local_position):
+			continue
+		var button: Button = control as Button
+		if button != null:
+			return button
+		button = _button_at_position_in_control(control, local_position)
+		if button != null:
+			return button
+	return null
+
+
+func _scroll_list_by(delta_y: float) -> void:
+	if list_scroll == null:
+		return
+	var vertical_bar: VScrollBar = list_scroll.get_v_scroll_bar()
+	var max_scroll: float = maxf(0.0, vertical_bar.max_value - vertical_bar.page)
+	var target: float = clampf(float(list_scroll.scroll_vertical) + delta_y, 0.0, max_scroll)
+	list_scroll.scroll_vertical = int(round(target))
+
+
 func _refresh() -> void:
 	if list == null:
 		return
@@ -286,6 +416,7 @@ func _add_owned_helper_row(row: Dictionary) -> void:
 	var toggle_button: Button = Button.new()
 	toggle_button.text = "下阵" if active else "上阵"
 	toggle_button.tooltip_text = "让该帮手停止工作" if active else "让该帮手进入当前场景工作"
+	toggle_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	toggle_button.disabled = _scene_transitioning
 	toggle_button.set_meta("helper_toggle", true)
 	toggle_button.set_meta("helper_active", active)
@@ -299,6 +430,7 @@ func _make_list_button(text: String) -> Button:
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return btn
 
 

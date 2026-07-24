@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scenes/main/Main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/ui/HUD.gd" id="2_hud"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://scripts/systems/UpgradeSystem.gd" id="8_upgrade"]
 [ext_resource type="Script" path="res://scripts/ui/BottleSpawnArea.gd" id="9_bottle_area"]
 [ext_resource type="Script" path="res://scripts/ui/GMPanel.gd" id="10_gm_panel"]
+[ext_resource type="Script" path="res://scripts/ui/DefenseMode.gd" id="11_defense_mode"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -58,6 +59,16 @@ offset_top = 120.0
 offset_right = 1264.0
 offset_bottom = 690.0
 script = ExtResource("4_upgrade_panel")
+
+[node name="DefenseMode" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("11_defense_mode")
 
 [node name="GMPanel" type="Control" parent="."]
 layout_mode = 1

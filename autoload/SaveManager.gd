@@ -1,7 +1,7 @@
 extends Node
 ## Handles load/save of GameState to user://.
 
-const LATEST_VERSION: int = 7
+const LATEST_VERSION: int = 10
 
 var autosave_interval: float = 15.0
 var _timer: float = 0.0

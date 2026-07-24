@@ -22,7 +22,7 @@ func _ready() -> void:
 	if not OS.is_debug_build():
 		queue_free()
 		return
-	z_index = 100
+	z_index = 4096
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build()
 	visible = false
