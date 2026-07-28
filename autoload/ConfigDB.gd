@@ -15,6 +15,7 @@ var defense_levels: Array = []
 var defense_levels_by_id: Dictionary = {}
 var defense_enemies_by_id: Dictionary = {}
 var defense_max_level: int = 0
+var defense_spawn_weights: Dictionary = {"top": 60.0, "left": 20.0, "right": 20.0}
 
 
 func _ready() -> void:
@@ -96,8 +97,11 @@ func _load_defense_levels() -> void:
     defense_levels_by_id.clear()
     defense_enemies_by_id.clear()
     defense_max_level = 0
+    defense_spawn_weights = {"top": 60.0, "left": 20.0, "right": 20.0}
     if data == null:
         return
+    if typeof(data.get("spawn_weights", {})) == TYPE_DICTIONARY:
+        defense_spawn_weights = (data.get("spawn_weights", {}) as Dictionary).duplicate()
     for enemy in data.get("enemy_types", []):
         var enemy_id: String = String(enemy.get("id", ""))
         if not enemy_id.is_empty():
@@ -235,6 +239,10 @@ func get_defense_enemy(enemy_id: String) -> Dictionary:
 
 func get_defense_max_level() -> int:
     return defense_max_level
+
+
+func get_defense_spawn_weights() -> Dictionary:
+    return defense_spawn_weights.duplicate()
 
 
 func _normalize_id(id):

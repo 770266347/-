@@ -8,6 +8,7 @@
             "speed": 80,
             "collect_radius": 24,
             "collect_cooldown": 1.2,
+            "defense_range": 145,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_neighbor.svg"
@@ -20,6 +21,7 @@
             "speed": 76,
             "collect_radius": 32,
             "collect_cooldown": 1.1,
+            "defense_range": 170,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_bar_staff.svg"
@@ -32,6 +34,7 @@
             "speed": 105,
             "collect_radius": 22,
             "collect_cooldown": 1.0,
+            "defense_range": 135,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_cart.svg"
@@ -44,6 +47,7 @@
             "speed": 108,
             "collect_radius": 30,
             "collect_cooldown": 0.92,
+            "defense_range": 160,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_volunteer.svg"
@@ -56,6 +60,7 @@
             "speed": 92,
             "collect_radius": 38,
             "collect_cooldown": 0.88,
+            "defense_range": 185,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_sanitation_worker.svg"
@@ -68,6 +73,7 @@
             "speed": 128,
             "collect_radius": 26,
             "collect_cooldown": 0.82,
+            "defense_range": 150,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_recycling_rider.svg"
@@ -80,6 +86,7 @@
             "speed": 132,
             "collect_radius": 34,
             "collect_cooldown": 0.75,
+            "defense_range": 175,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_junkyard_apprentice.svg"
@@ -92,6 +99,7 @@
             "speed": 120,
             "collect_radius": 38,
             "collect_cooldown": 0.68,
+            "defense_range": 190,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_sorting_manager.svg"
@@ -104,6 +112,7 @@
             "speed": 148,
             "collect_radius": 30,
             "collect_cooldown": 0.6,
+            "defense_range": 170,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_recycling_boss.svg"
@@ -116,6 +125,7 @@
             "speed": 145,
             "collect_radius": 40,
             "collect_cooldown": 0.52,
+            "defense_range": 205,
             "scenes": [],
             "preferred_types": [],
             "sprite": "res://assets/helpers/helper_team_captain.svg"

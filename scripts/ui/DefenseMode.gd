@@ -1,19 +1,25 @@
 class_name DefenseMode
 extends Control
-## Lightweight lane-defense prototype unlocked after all collection scenes.
+## Freeform street-defense mode unlocked after all collection scenes.
 
 const BASE_LOGICAL_WIDTH: float = 393.0
-const LANE_COUNT: int = 5
+const DEFENSE_SLOT_COUNT: int = 5
 const BASE_MAX_HP: int = 100
 const ENEMY_LIMIT: int = 18
 const TOP_BAND_HEIGHT_PT: float = 64.0
 const ROSTER_HEIGHT_PT: float = 166.0
 const SLOT_HEIGHT_PT: float = 82.0
 const ENEMY_SIZE_PT: Vector2 = Vector2(54.0, 66.0)
+const SIDE_PORTAL_SIZE_PT: Vector2 = Vector2(30.0, 76.0)
+const SPAWN_TOP: String = "top"
+const SPAWN_LEFT: String = "left"
+const SPAWN_RIGHT: String = "right"
 
 var background: TextureRect
 var shade: ColorRect
-var lane_guides: Array[ColorRect] = []
+var range_layer: DefenseRangeLayer
+var left_spawn_portal: Panel
+var right_spawn_portal: Panel
 var combat_layer: Control
 var top_panel: PanelContainer
 var back_button: Button
@@ -85,12 +91,14 @@ func _build() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 
-	for lane_index in range(LANE_COUNT):
-		var guide: ColorRect = ColorRect.new()
-		guide.color = Color(1.0, 0.92, 0.55, 0.16 if lane_index % 2 == 0 else 0.08)
-		guide.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(guide)
-		lane_guides.append(guide)
+	range_layer = DefenseRangeLayer.new()
+	range_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(range_layer)
+
+	left_spawn_portal = _make_spawn_portal(">")
+	add_child(left_spawn_portal)
+	right_spawn_portal = _make_spawn_portal("<")
+	add_child(right_spawn_portal)
 
 	combat_layer = Control.new()
 	combat_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -105,6 +113,21 @@ func _build() -> void:
 	_build_roster_panel()
 	_build_level_select_panel()
 	_build_result_panel()
+
+
+func _make_spawn_portal(direction_text: String) -> Panel:
+	var portal: Panel = Panel.new()
+	portal.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portal.z_index = 12
+	var direction_label: Label = Label.new()
+	direction_label.text = direction_text
+	direction_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	direction_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	direction_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	direction_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	direction_label.set_meta("portal_direction", true)
+	portal.add_child(direction_label)
+	return portal
 
 
 func _build_top_band() -> void:
@@ -265,6 +288,9 @@ func _reset_battle() -> void:
 	_attack_cooldowns.clear()
 	result_panel.visible = false
 	level_select_panel.visible = false
+	range_layer.visible = true
+	left_spawn_portal.visible = true
+	right_spawn_portal.visible = true
 	title_label.text = "第 %d 关 %s" % [_current_level_id, String(_current_level.get("name", ""))]
 	_refresh_status()
 
@@ -275,6 +301,9 @@ func _show_level_selection() -> void:
 	_battle_over = false
 	result_panel.visible = false
 	level_select_panel.visible = true
+	range_layer.visible = false
+	left_spawn_portal.visible = false
+	right_spawn_portal.visible = false
 	title_label.text = "街区防守"
 	wave_label.text = "选择关卡"
 	status_label.text = "已解锁\n%d/%d" % [GameState.defense_highest_unlocked_level, ConfigDB.get_defense_max_level()]
@@ -357,7 +386,7 @@ func _rebuild_slots(scale: float) -> void:
 		child.queue_free()
 	slots.clear()
 	slot_row.add_theme_constant_override("separation", int(5.0 * scale))
-	for slot_index in range(LANE_COUNT):
+	for slot_index in range(DEFENSE_SLOT_COUNT):
 		var slot: DefenseSlot = DefenseSlot.new()
 		slot.configure(slot_index, scale)
 		slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -372,6 +401,7 @@ func _rebuild_slots(scale: float) -> void:
 			else:
 				_assigned_helpers.erase(slot_index)
 	_refresh_deployed_label()
+	call_deferred("_refresh_attack_ranges")
 
 
 func _on_helper_dropped(slot_index: int, helper_id: String) -> void:
@@ -388,6 +418,7 @@ func _on_helper_dropped(slot_index: int, helper_id: String) -> void:
 		slots[slot_index].assign_helper(ConfigDB.get_helper(helper_id))
 	_attack_cooldowns[slot_index] = 0.0
 	_refresh_deployed_label()
+	_refresh_attack_ranges()
 
 
 func _update_enemy_spawning(delta: float) -> void:
@@ -411,7 +442,6 @@ func _spawn_enemy(enemy_id: String) -> void:
 		return
 	var scale: float = _ui_scale(get_viewport_rect().size)
 	var is_boss: bool = bool(enemy_row.get("boss", false))
-	var lane: int = floori(float(LANE_COUNT) * 0.5) if is_boss else _rng.randi_range(0, LANE_COUNT - 1)
 	var visual_scale: float = float(enemy_row.get("visual_scale", 1.0))
 	var enemy: TextureRect = TextureRect.new()
 	enemy.texture = load(String(enemy_row.get("sprite", ""))) as Texture2D
@@ -419,12 +449,14 @@ func _spawn_enemy(enemy_id: String) -> void:
 	enemy.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	enemy.size = ENEMY_SIZE_PT * scale * visual_scale
 	enemy.pivot_offset = enemy.size * 0.5
-	enemy.position = Vector2(_lane_center_x(lane) - enemy.size.x * 0.5, (TOP_BAND_HEIGHT_PT + 36.0) * scale)
+	var spawn_source: String = SPAWN_TOP if is_boss else _pick_spawn_source()
+	enemy.position = _enemy_spawn_position(spawn_source, enemy.size)
 	enemy.modulate = Color.from_string(String(enemy_row.get("tint", "#ffffff")), Color.WHITE)
 	enemy.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	enemy.z_index = (45 if is_boss else 20) + lane
+	enemy.z_index = 45 if is_boss else 20
 	enemy.set_meta("is_defense_enemy", true)
-	enemy.set_meta("lane", lane)
+	enemy.set_meta("spawn_source", spawn_source)
+	enemy.set_meta("target_position", _random_defense_target())
 	enemy.set_meta("enemy_id", enemy_id)
 	enemy.set_meta("enemy_name", String(enemy_row.get("name", "敌人")))
 	enemy.set_meta("boss", is_boss)
@@ -458,17 +490,59 @@ func _spawn_enemy(enemy_id: String) -> void:
 		enemy.add_child(boss_label)
 
 
+func _pick_spawn_source() -> String:
+	var weights: Dictionary = ConfigDB.get_defense_spawn_weights()
+	var top_weight: float = maxf(0.0, float(weights.get(SPAWN_TOP, 60.0)))
+	var left_weight: float = maxf(0.0, float(weights.get(SPAWN_LEFT, 20.0)))
+	var right_weight: float = maxf(0.0, float(weights.get(SPAWN_RIGHT, 20.0)))
+	var total_weight: float = top_weight + left_weight + right_weight
+	if total_weight <= 0.0:
+		return SPAWN_TOP
+	var roll: float = _rng.randf_range(0.0, total_weight)
+	if roll <= top_weight:
+		return SPAWN_TOP
+	if roll <= top_weight + left_weight:
+		return SPAWN_LEFT
+	return SPAWN_RIGHT
+
+
+func _enemy_spawn_position(source: String, enemy_size: Vector2) -> Vector2:
+	var viewport_size: Vector2 = get_viewport_rect().size
+	var scale: float = _ui_scale(viewport_size)
+	var margin: float = 16.0 * scale
+	match source:
+		SPAWN_LEFT:
+			return _portal_center(left_spawn_portal) - enemy_size * 0.5
+		SPAWN_RIGHT:
+			return _portal_center(right_spawn_portal) - enemy_size * 0.5
+	var min_x: float = margin
+	var max_x: float = maxf(min_x, viewport_size.x - enemy_size.x - margin)
+	return Vector2(_rng.randf_range(min_x, max_x), (TOP_BAND_HEIGHT_PT + 36.0) * scale)
+
+
+func _random_defense_target() -> Vector2:
+	var viewport_size: Vector2 = get_viewport_rect().size
+	var scale: float = _ui_scale(viewport_size)
+	var margin: float = 20.0 * scale
+	return Vector2(_rng.randf_range(margin, viewport_size.x - margin), _defense_line_y())
+
+
 func _update_enemies(delta: float) -> void:
 	var scale: float = _ui_scale(get_viewport_rect().size)
-	var defense_y: float = _defense_line_y()
 	for child in combat_layer.get_children():
 		var enemy: TextureRect = child as TextureRect
 		if enemy == null or enemy.is_queued_for_deletion() or not bool(enemy.get_meta("is_defense_enemy", false)):
 			continue
 		if bool(enemy.get_meta("defeated", false)):
 			continue
-		enemy.position.y += float(enemy.get_meta("speed", 28.0)) * scale * delta
-		if enemy.position.y + enemy.size.y < defense_y:
+		var target_position: Vector2 = enemy.get_meta("target_position", Vector2(enemy.position.x, _defense_line_y()))
+		var enemy_center: Vector2 = enemy.position + enemy.size * 0.5
+		var offset: Vector2 = target_position - enemy_center
+		var step: float = float(enemy.get_meta("speed", 28.0)) * scale * delta
+		if offset.length() > maxf(step, 3.0 * scale):
+			enemy.position += offset.normalized() * step
+			enemy.flip_h = offset.x < 0.0
+			enemy.z_index = 20 + clampi(int(enemy.position.y / scale), 0, 500)
 			continue
 		_base_hp = maxi(0, _base_hp - int(enemy.get_meta("base_damage", 10)))
 		enemy.queue_free()
@@ -479,7 +553,7 @@ func _update_enemies(delta: float) -> void:
 
 
 func _update_helpers(delta: float) -> void:
-	for slot_index in range(LANE_COUNT):
+	for slot_index in range(DEFENSE_SLOT_COUNT):
 		var helper_id: String = String(_assigned_helpers.get(slot_index, ""))
 		if helper_id.is_empty() or not GameState.has_helper(helper_id):
 			continue
@@ -487,29 +561,34 @@ func _update_helpers(delta: float) -> void:
 		_attack_cooldowns[slot_index] = remaining
 		if remaining > 0.0:
 			continue
-		var target: TextureRect = _nearest_enemy_in_lane(slot_index)
+		var row: Dictionary = ConfigDB.get_helper(helper_id)
+		var target: TextureRect = _nearest_enemy_in_range(slot_index, row)
 		if target == null:
 			continue
-		var row: Dictionary = ConfigDB.get_helper(helper_id)
 		var damage: float = maxf(1.0, roundf(float(row.get("speed", 80.0)) / 42.0))
 		_damage_enemy(target, damage)
 		_attack_cooldowns[slot_index] = maxf(0.34, float(row.get("collect_cooldown", 1.0)) * 0.62)
 		_spawn_attack_flash(slot_index, target)
 
 
-func _nearest_enemy_in_lane(lane: int) -> TextureRect:
+func _nearest_enemy_in_range(slot_index: int, helper_row: Dictionary) -> TextureRect:
 	var target: TextureRect = null
-	var greatest_y: float = -INF
+	var smallest_distance_to_defense: float = INF
+	var helper_center: Vector2 = _helper_defense_center(slot_index)
+	var attack_radius: float = float(helper_row.get("defense_range", 145.0)) * _ui_scale(get_viewport_rect().size)
 	for child in combat_layer.get_children():
 		var enemy: TextureRect = child as TextureRect
 		if enemy == null or enemy.is_queued_for_deletion():
 			continue
 		if not bool(enemy.get_meta("is_defense_enemy", false)) or bool(enemy.get_meta("defeated", false)):
 			continue
-		if int(enemy.get_meta("lane", -1)) != lane:
+		var enemy_center: Vector2 = enemy.position + enemy.size * 0.5
+		if helper_center.distance_to(enemy_center) > attack_radius:
 			continue
-		if enemy.position.y > greatest_y:
-			greatest_y = enemy.position.y
+		var defense_target: Vector2 = enemy.get_meta("target_position", Vector2(enemy_center.x, _defense_line_y()))
+		var distance_to_defense: float = enemy_center.distance_to(defense_target)
+		if distance_to_defense < smallest_distance_to_defense:
+			smallest_distance_to_defense = distance_to_defense
 			target = enemy
 	return target
 
@@ -534,13 +613,13 @@ func _damage_enemy(enemy: TextureRect, damage: float) -> void:
 	tween.finished.connect(_free_instance_by_id.bind(int(enemy.get_instance_id())))
 
 
-func _spawn_attack_flash(lane: int, target: TextureRect) -> void:
+func _spawn_attack_flash(slot_index: int, target: TextureRect) -> void:
 	if target == null or not is_instance_valid(target):
 		return
 	var scale: float = _ui_scale(get_viewport_rect().size)
 	var shot: Panel = Panel.new()
 	shot.size = Vector2(10.0, 10.0) * scale
-	shot.position = Vector2(_lane_center_x(lane), _defense_line_y() - 22.0 * scale) - shot.size * 0.5
+	shot.position = _helper_defense_center(slot_index) - shot.size * 0.5
 	shot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shot.z_index = 60
 	shot.add_theme_stylebox_override("panel", _round_style(Color(1.0, 0.84, 0.24, 1.0), Color(1.0, 0.96, 0.7, 1.0), 1.0, 5.0, scale))
@@ -607,7 +686,7 @@ func _refresh_status() -> void:
 
 func _refresh_deployed_label() -> void:
 	if deployed_label != null:
-		deployed_label.text = "布阵 %d/%d" % [_assigned_helpers.size(), LANE_COUNT]
+		deployed_label.text = "布阵 %d/%d" % [_assigned_helpers.size(), DEFENSE_SLOT_COUNT]
 
 
 func apply_layout(viewport_size: Vector2) -> void:
@@ -618,6 +697,8 @@ func apply_layout(viewport_size: Vector2) -> void:
 	background.size = viewport_size
 	shade.position = Vector2.ZERO
 	shade.size = viewport_size
+	range_layer.position = Vector2.ZERO
+	range_layer.size = viewport_size
 	combat_layer.position = Vector2.ZERO
 	combat_layer.size = viewport_size
 
@@ -647,13 +728,20 @@ func apply_layout(viewport_size: Vector2) -> void:
 	slot_row.position = Vector2(margin, slot_top)
 	slot_row.size = Vector2(viewport_size.x - margin * 2.0, SLOT_HEIGHT_PT * scale)
 
-	var combat_top: float = (TOP_BAND_HEIGHT_PT + 16.0) * scale
-	for lane_index in range(LANE_COUNT):
-		var guide: ColorRect = lane_guides[lane_index]
-		var lane_left: float = margin + (viewport_size.x - margin * 2.0) * float(lane_index) / float(LANE_COUNT)
-		var lane_right: float = margin + (viewport_size.x - margin * 2.0) * float(lane_index + 1) / float(LANE_COUNT)
-		guide.position = Vector2(lane_left, combat_top)
-		guide.size = Vector2(lane_right - lane_left, maxf(0.0, slot_top - combat_top))
+	var combat_top: float = (TOP_BAND_HEIGHT_PT + 36.0) * scale
+	var portal_size: Vector2 = SIDE_PORTAL_SIZE_PT * scale
+	var portal_y: float = combat_top + maxf(0.0, slot_top - combat_top - portal_size.y) * 0.43
+	left_spawn_portal.position = Vector2(2.0 * scale, portal_y)
+	left_spawn_portal.size = portal_size
+	right_spawn_portal.position = Vector2(viewport_size.x - portal_size.x - 2.0 * scale, portal_y)
+	right_spawn_portal.size = portal_size
+	for portal in [left_spawn_portal, right_spawn_portal]:
+		portal.add_theme_stylebox_override("panel", _round_style(Color(0.16, 0.1, 0.24, 0.94), Color(0.48, 0.9, 0.86, 0.94), 2.0, 14.0, scale))
+		for child in portal.get_children():
+			var direction_label: Label = child as Label
+			if direction_label != null and bool(direction_label.get_meta("portal_direction", false)):
+				direction_label.add_theme_font_size_override("font_size", int(18.0 * scale))
+				direction_label.add_theme_color_override("font_color", Color(0.78, 1.0, 0.92, 1.0))
 
 	level_select_panel.size = Vector2(350.0, 230.0) * scale
 	level_select_panel.position = Vector2((viewport_size.x - level_select_panel.size.x) * 0.5, 150.0 * scale)
@@ -687,13 +775,47 @@ func apply_layout(viewport_size: Vector2) -> void:
 		_rebuild_slots(scale)
 		if _active:
 			_refresh_roster()
+	call_deferred("_refresh_attack_ranges")
 
 
-func _lane_center_x(lane: int) -> float:
-	var viewport_width: float = get_viewport_rect().size.x
-	var margin: float = 10.0 * _ui_scale(get_viewport_rect().size)
-	var usable_width: float = viewport_width - margin * 2.0
-	return margin + usable_width * (float(lane) + 0.5) / float(LANE_COUNT)
+func _portal_center(portal: Control) -> Vector2:
+	if portal == null:
+		return Vector2.ZERO
+	return portal.position + portal.size * 0.5
+
+
+func _helper_defense_center(slot_index: int) -> Vector2:
+	if slot_index >= 0 and slot_index < slots.size():
+		var slot: DefenseSlot = slots[slot_index]
+		if slot != null and is_instance_valid(slot) and not slot.is_queued_for_deletion() and slot.size.x > 0.0:
+			return slot_row.position + slot.position + slot.size * 0.5
+	var viewport_size: Vector2 = get_viewport_rect().size
+	var scale: float = _ui_scale(viewport_size)
+	var margin: float = 10.0 * scale
+	var usable_width: float = viewport_size.x - margin * 2.0
+	return Vector2(
+		margin + usable_width * (float(slot_index) + 0.5) / float(DEFENSE_SLOT_COUNT),
+		_defense_line_y() + SLOT_HEIGHT_PT * scale * 0.5
+	)
+
+
+func _refresh_attack_ranges() -> void:
+	if range_layer == null:
+		return
+	var scale: float = _ui_scale(get_viewport_rect().size)
+	var ranges: Array = []
+	for slot_index_variant in _assigned_helpers.keys():
+		var slot_index: int = int(slot_index_variant)
+		var helper_id: String = String(_assigned_helpers.get(slot_index, ""))
+		var row: Dictionary = ConfigDB.get_helper(helper_id)
+		if row.is_empty() or not GameState.has_helper(helper_id):
+			continue
+		ranges.append({
+			"center": _helper_defense_center(slot_index),
+			"radius": float(row.get("defense_range", 145.0)) * scale,
+			"line_width": 1.4 * scale,
+		})
+	range_layer.set_ranges(ranges)
 
 
 func _defense_line_y() -> float:
