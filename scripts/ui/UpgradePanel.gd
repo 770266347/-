@@ -462,6 +462,7 @@ func _on_scene_transition_finished(_scene_id: String) -> void:
 
 func _upgrade_button_text(row: Dictionary, include_scope: bool = true) -> String:
 	var id: String = String(row.get("id", ""))
+	var display_name: String = _upgrade_display_name(row)
 	var level: int = GameState.get_upgrade_level(id)
 	var max_level: int = int(row.get("max_level", 1))
 	var system: UpgradeSystem = _upgrade_system()
@@ -480,8 +481,21 @@ func _upgrade_button_text(row: Dictionary, include_scope: bool = true) -> String
 	elif max_level > 1:
 		status = "Lv.%d→%d｜%s 元" % [level, level + 1, BigNumber.format(cost)]
 	if include_scope:
-		return "%s｜%s｜%s" % [_upgrade_scope_name(row), String(row.get("name", "升级")), status]
-	return "%s｜%s" % [String(row.get("name", "升级")), status]
+		return "%s｜%s｜%s" % [_upgrade_scope_name(row), display_name, status]
+	return "%s｜%s" % [display_name, status]
+
+
+func _upgrade_display_name(row: Dictionary) -> String:
+	var name: String = String(row.get("name", "升级"))
+	var effect: float = float(row.get("effect_per_level", 0.0))
+	match String(row.get("type", "")):
+		"global_value":
+			return "%s +%d%%/级" % [name, roundi(effect * 100.0)]
+		"global_spawn":
+			return "刷新间隔 -%d%%/级" % roundi(effect * 100.0)
+		"global_capacity":
+			return "%s +%d/级" % [name, roundi(effect)]
+	return name
 
 
 func _upgrade_scope_name(row: Dictionary) -> String:

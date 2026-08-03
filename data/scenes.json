@@ -37,7 +37,7 @@
                     "type": "paper",
                     "weight": 5,
                     "reward_count": 1,
-                    "cash": 5,
+                    "cash": 3,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/street_cardboard_box.svg"
                 }
@@ -47,7 +47,7 @@
             "id": "bar",
             "name": "酒吧",
             "default_unlocked": false,
-            "unlock_cost": 300,
+            "unlock_cost": 250,
             "default_unlock_drop_ids": ["bar_beer_bottle"],
             "background": "res://assets/scenes/bar_bg.svg",
             "spawn_interval_min": 0.75,
@@ -61,7 +61,7 @@
                     "type": "glass",
                     "weight": 60,
                     "reward_count": 1,
-                    "cash": 3,
+                    "cash": 2,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/bar_beer_bottle.svg"
                 },
@@ -71,7 +71,7 @@
                     "type": "glass",
                     "weight": 30,
                     "reward_count": 1,
-                    "cash": 8,
+                    "cash": 3,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/bar_wine_bottle.svg"
                 },
@@ -81,7 +81,7 @@
                     "type": "glass",
                     "weight": 10,
                     "reward_count": 1,
-                    "cash": 15,
+                    "cash": 5,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/bar_baijiu_bottle.svg"
                 }
@@ -91,7 +91,7 @@
             "id": "night_market",
             "name": "夜市",
             "default_unlocked": false,
-            "unlock_cost": 3000,
+            "unlock_cost": 1800,
             "default_unlock_drop_ids": ["night_market_milk_tea_cup"],
             "background": "res://assets/scenes/night_market_bg.svg",
             "spawn_interval_min": 0.62,
@@ -105,7 +105,7 @@
                     "type": "plastic",
                     "weight": 70,
                     "reward_count": 1,
-                    "cash": 25,
+                    "cash": 4,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/night_market_milk_tea_cup.svg"
                 },
@@ -115,7 +115,7 @@
                     "type": "paper",
                     "weight": 25,
                     "reward_count": 1,
-                    "cash": 60,
+                    "cash": 6,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/night_market_takeaway_box.svg"
                 },
@@ -125,7 +125,7 @@
                     "type": "plastic",
                     "weight": 5,
                     "reward_count": 1,
-                    "cash": 150,
+                    "cash": 9,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/night_market_oil_bottle.svg"
                 }
@@ -135,7 +135,7 @@
             "id": "beach",
             "name": "海滩",
             "default_unlocked": false,
-            "unlock_cost": 15000,
+            "unlock_cost": 9000,
             "default_unlock_drop_ids": ["beach_drink_bottle"],
             "background": "res://assets/scenes/beach_bg.svg",
             "spawn_interval_min": 0.75,
@@ -149,7 +149,7 @@
                     "type": "plastic",
                     "weight": 60,
                     "reward_count": 1,
-                    "cash": 200,
+                    "cash": 7,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/beach_drink_bottle.svg"
                 },
@@ -159,7 +159,7 @@
                     "type": "plastic",
                     "weight": 28,
                     "reward_count": 1,
-                    "cash": 500,
+                    "cash": 10,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/beach_sunscreen_bottle.svg"
                 },
@@ -169,7 +169,7 @@
                     "type": "plastic",
                     "weight": 10,
                     "reward_count": 1,
-                    "cash": 1200,
+                    "cash": 14,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/beach_plastic_float.svg"
                 },
@@ -179,7 +179,7 @@
                     "type": "plastic",
                     "weight": 2,
                     "reward_count": 1,
-                    "cash": 3000,
+                    "cash": 20,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/beach_fishing_net.svg"
                 }
@@ -189,7 +189,7 @@
             "id": "industrial_park",
             "name": "工业园",
             "default_unlocked": false,
-            "unlock_cost": 80000,
+            "unlock_cost": 40000,
             "default_unlock_drop_ids": ["industrial_plastic_drum"],
             "background": "res://assets/scenes/industrial_park_bg.svg",
             "spawn_interval_min": 0.9,
@@ -203,7 +203,7 @@
                     "type": "plastic",
                     "weight": 60,
                     "reward_count": 1,
-                    "cash": 1500,
+                    "cash": 12,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/industrial_plastic_drum.svg"
                 },
@@ -213,7 +213,7 @@
                     "type": "metal",
                     "weight": 25,
                     "reward_count": 1,
-                    "cash": 4000,
+                    "cash": 18,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/industrial_aluminum_part.svg"
                 },
@@ -223,7 +223,7 @@
                     "type": "metal",
                     "weight": 12,
                     "reward_count": 1,
-                    "cash": 8000,
+                    "cash": 26,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/industrial_scrap_wire.svg"
                 },
@@ -233,7 +233,7 @@
                     "type": "metal",
                     "weight": 3,
                     "reward_count": 1,
-                    "cash": 15000,
+                    "cash": 40,
                     "default_unlocked": false,
                     "sprite": "res://assets/items/industrial_copper_part.svg"
                 }

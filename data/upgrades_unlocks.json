@@ -2,38 +2,38 @@
     "upgrades": [
         {
             "id": "upgrade_global_value",
-            "name": "通用回收价",
-            "description": "每级使所有场景的回收物现金收益提高 10%。",
+            "name": "回收价",
+            "description": "每级使所有场景的回收物现金收益提高 20%。",
             "type": "global_value",
             "scope": "global",
-            "max_level": 20,
+            "max_level": 5,
             "cost_base": 100,
-            "cost_growth": 1.75,
-            "effect_per_level": 0.1,
+            "cost_growth": 1.45,
+            "effect_per_level": 0.2,
             "requires": []
         },
         {
             "id": "upgrade_global_spawn",
-            "name": "通用刷新效率",
-            "description": "每级使所有场景的刷新间隔缩短 3%。",
+            "name": "刷新效率",
+            "description": "每级使所有场景的刷新间隔缩短 10%。",
             "type": "global_spawn",
             "scope": "global",
-            "max_level": 15,
-            "cost_base": 250,
-            "cost_growth": 1.85,
-            "effect_per_level": 0.03,
+            "max_level": 5,
+            "cost_base": 200,
+            "cost_growth": 1.5,
+            "effect_per_level": 0.1,
             "requires": []
         },
         {
             "id": "upgrade_global_capacity",
-            "name": "通用场地容量",
-            "description": "每级使所有场景的后台产物库存上限增加 100。",
+            "name": "场地容量",
+            "description": "每级使所有场景的后台产物库存上限增加 300。",
             "type": "global_capacity",
             "scope": "global",
             "max_level": 5,
-            "cost_base": 500,
-            "cost_growth": 3.0,
-            "effect_per_level": 100,
+            "cost_base": 400,
+            "cost_growth": 2.0,
+            "effect_per_level": 300,
             "requires": []
         },
         {
@@ -54,7 +54,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "street",
-            "cost": 120,
+            "cost": 100,
             "unlock_drop_id": "street_cardboard_box",
             "requires": ["unlock_street_can"]
         },
@@ -64,7 +64,7 @@
             "description": "解锁酒吧场景，并默认产出啤酒瓶子。",
             "type": "unlock_scene",
             "scope": "scene_unlock",
-            "cost": 300,
+            "cost": 250,
             "unlock_scene_id": "bar",
             "unlock_drop_ids": ["bar_beer_bottle"],
             "requires": []
@@ -76,7 +76,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "bar",
-            "cost": 800,
+            "cost": 600,
             "unlock_drop_id": "bar_wine_bottle",
             "requires": ["unlock_bar_scene"]
         },
@@ -87,7 +87,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "bar",
-            "cost": 1800,
+            "cost": 1200,
             "unlock_drop_id": "bar_baijiu_bottle",
             "requires": ["unlock_bar_wine"]
         },
@@ -97,7 +97,7 @@
             "description": "解锁夜市场景，并默认产出奶茶杯。",
             "type": "unlock_scene",
             "scope": "scene_unlock",
-            "cost": 3000,
+            "cost": 1800,
             "unlock_scene_id": "night_market",
             "unlock_drop_ids": ["night_market_milk_tea_cup"],
             "requires": ["unlock_bar_scene"]
@@ -109,7 +109,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "night_market",
-            "cost": 6000,
+            "cost": 3500,
             "unlock_drop_id": "night_market_takeaway_box",
             "requires": ["unlock_night_market_scene"]
         },
@@ -120,7 +120,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "night_market",
-            "cost": 15000,
+            "cost": 7000,
             "unlock_drop_id": "night_market_oil_bottle",
             "requires": ["unlock_night_market_takeaway"]
         },
@@ -130,7 +130,7 @@
             "description": "解锁海滩场景，并默认产出饮料瓶。",
             "type": "unlock_scene",
             "scope": "scene_unlock",
-            "cost": 15000,
+            "cost": 9000,
             "unlock_scene_id": "beach",
             "unlock_drop_ids": ["beach_drink_bottle"],
             "requires": ["unlock_night_market_scene"]
@@ -142,7 +142,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "beach",
-            "cost": 40000,
+            "cost": 16000,
             "unlock_drop_id": "beach_sunscreen_bottle",
             "requires": ["unlock_beach_scene"]
         },
@@ -153,7 +153,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "beach",
-            "cost": 90000,
+            "cost": 28000,
             "unlock_drop_id": "beach_plastic_float",
             "requires": ["unlock_beach_sunscreen"]
         },
@@ -164,7 +164,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "beach",
-            "cost": 200000,
+            "cost": 50000,
             "unlock_drop_id": "beach_fishing_net",
             "requires": ["unlock_beach_float"]
         },
@@ -174,7 +174,7 @@
             "description": "解锁工业园场景，并默认产出塑料桶。",
             "type": "unlock_scene",
             "scope": "scene_unlock",
-            "cost": 80000,
+            "cost": 40000,
             "unlock_scene_id": "industrial_park",
             "unlock_drop_ids": ["industrial_plastic_drum"],
             "requires": ["unlock_beach_scene"]
@@ -186,7 +186,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "industrial_park",
-            "cost": 250000,
+            "cost": 75000,
             "unlock_drop_id": "industrial_aluminum_part",
             "requires": ["unlock_industrial_scene"]
         },
@@ -197,7 +197,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "industrial_park",
-            "cost": 600000,
+            "cost": 130000,
             "unlock_drop_id": "industrial_scrap_wire",
             "requires": ["unlock_industrial_aluminum"]
         },
@@ -208,7 +208,7 @@
             "type": "unlock_drop",
             "scope": "scene",
             "scene_id": "industrial_park",
-            "cost": 1500000,
+            "cost": 220000,
             "unlock_drop_id": "industrial_copper_part",
             "requires": ["unlock_industrial_wire"]
         }

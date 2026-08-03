@@ -380,6 +380,7 @@ func from_dict(d: Dictionary) -> void:
     _merge_default_unlocked_scenes()
     _merge_default_unlocked_drops()
     _apply_unlock_upgrades_to_state()
+    _sanitize_upgrade_levels()
     _sanitize_active_helpers()
     _sanitize_scene_drop_inventories()
     _sanitize_defense_progress()
@@ -598,6 +599,23 @@ func _sanitize_drop_collection_counts() -> void:
     drop_collection_counts = sanitized
 
 
+func _sanitize_upgrade_levels() -> void:
+    var sanitized: Dictionary = {}
+    for upgrade_id in upgrades.keys():
+        var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
+        if row.is_empty():
+            continue
+        var level: int = clampi(
+            int(upgrades.get(upgrade_id, 0)),
+            0,
+            int(row.get("max_level", 1))
+        )
+        if level > 0:
+            sanitized[upgrade_id] = level
+    upgrades = sanitized
+
+
 func _upgrade_effect_total(upgrade_id: String) -> float:
     var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
-    return float(get_upgrade_level(upgrade_id)) * float(row.get("effect_per_level", 0.0))
+    var level: int = clampi(get_upgrade_level(upgrade_id), 0, int(row.get("max_level", 0)))
+    return float(level) * float(row.get("effect_per_level", 0.0))
