@@ -1,5 +1,8 @@
 extends Control
-## Overlay HUD: resources and scene switch banner.
+## 顶部 HUD。
+##
+## 显示现金、累计回收物、当前场景、场景切换和街区防守入口；
+## 回收统计弹窗也由此管理，因为它与顶部回收物数字共享同一份分类数据。
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 
@@ -24,6 +27,7 @@ var _scene_transitioning: bool = false
 
 
 func _ready() -> void:
+    ## 先建 UI 再订阅事件，避免初始化阶段收到事件时控件尚未存在。
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
 	EventBus.currency_changed.connect(_on_currency_changed)
@@ -40,6 +44,7 @@ func _ready() -> void:
 
 
 func _build() -> void:
+    ## 创建资源栏、场景标题、左右切换按钮和防守入口。
 	top_panel = PanelContainer.new()
 	top_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(top_panel)
@@ -105,6 +110,7 @@ func _build() -> void:
 
 
 func _build_collection_stats() -> void:
+    ## 构建隐藏的统计层；具体产物行在打开弹窗时按配置动态生成。
 	stats_layer = Control.new()
 	stats_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stats_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -162,11 +168,13 @@ func _build_collection_stats() -> void:
 
 
 func _refresh() -> void:
+    ## 只更新顶部两个高频资源文本，不重建场景按钮。
 	cash_label.text = "现金 %s" % BigNumber.format(GameState.currency)
 	bottle_button.text = "回收物 %s" % BigNumber.format(float(GameState.bottles), 0)
 
 
 func _refresh_scene() -> void:
+    ## 根据当前场景、解锁状态和过场状态更新标题及按钮可用性。
 	challenge_title_label.text = ConfigDB.get_scene_name(GameState.current_scene_id)
 	challenge_subtitle_label.text = _scene_subtitle()
 	if left_scene_button != null:
@@ -179,6 +187,7 @@ func _refresh_scene() -> void:
 
 
 func _scene_subtitle() -> String:
+    ## 将过场、下一场景未解锁和普通状态转换为短副标题。
 	if _scene_transitioning:
 		return "帮手正在通过传送门"
 	var next_scene_id: String = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, 1)
@@ -188,14 +197,17 @@ func _scene_subtitle() -> String:
 
 
 func _on_currency_changed(_new_amount: float, _delta: float) -> void:
+    ## 现金变化只需刷新资源栏。
 	_refresh()
 
 
 func _on_bottle_changed(_new_amount: int, _delta: int) -> void:
+    ## 总回收量变化只需刷新资源栏，分类弹窗另有独立信号。
 	_refresh()
 
 
 func _on_drop_collection_count_changed(drop_id: String, new_amount: int, _delta: int) -> void:
+    ## 弹窗打开时只更新受影响的那一行，避免重建整个统计列表。
 	if stats_layer == null or not stats_layer.visible:
 		return
 	var count_label: Label = stats_count_labels.get(drop_id) as Label
@@ -205,28 +217,34 @@ func _on_drop_collection_count_changed(drop_id: String, new_amount: int, _delta:
 
 
 func _on_scene_changed(_scene_id: String) -> void:
+    ## GameState 切场景后刷新标题和左右按钮状态。
 	_refresh_scene()
 
 
 func _on_scene_transition_started() -> void:
+    ## 过场期间锁定重复切换。
 	_scene_transitioning = true
 	_refresh_scene()
 
 
 func _on_scene_transition_finished(_scene_id: String) -> void:
+    ## 传送门过场结束后恢复切换入口。
 	_scene_transitioning = false
 	_refresh_scene()
 
 
 func _on_left_scene_pressed() -> void:
+    ## 通过 EventBus 请求向左切换，动画由 BottleSpawnArea 执行。
 	EventBus.scene_switch_requested.emit(-1)
 
 
 func _on_right_scene_pressed() -> void:
+    ## 通过 EventBus 请求向右切换，动画由 BottleSpawnArea 执行。
 	EventBus.scene_switch_requested.emit(1)
 
 
 func _defense_mode_unlocked() -> bool:
+    ## 防守入口只有在配置中的全部场景解锁后才显示。
 	var scenes: Array = ConfigDB.get_scenes()
 	if scenes.size() < 5:
 		return false
@@ -237,16 +255,19 @@ func _defense_mode_unlocked() -> bool:
 
 
 func _open_collection_stats() -> void:
+    ## 打开前重建分类列表，确保新增产物或最新数量立即可见。
 	_refresh_collection_stats()
 	stats_layer.visible = true
 	apply_layout(get_viewport_rect().size)
 
 
 func _close_collection_stats() -> void:
+    ## 只隐藏弹窗，不清除分类标签缓存，下一次打开会重新构建。
 	stats_layer.visible = false
 
 
 func _on_stats_overlay_input(event: InputEvent) -> void:
+    ## 点击或触摸遮罩区域关闭统计弹窗，弹窗本体不受影响。
 	var mouse_button: InputEventMouseButton = event as InputEventMouseButton
 	if mouse_button != null and mouse_button.button_index == MOUSE_BUTTON_LEFT and mouse_button.pressed:
 		_close_collection_stats()
@@ -259,6 +280,7 @@ func _on_stats_overlay_input(event: InputEvent) -> void:
 
 
 func _refresh_collection_stats() -> void:
+    ## 按场景和产物配置重建统计列表，顺序与场景页签保持一致。
 	for child in stats_list.get_children():
 		child.queue_free()
 	stats_count_labels.clear()
@@ -278,6 +300,7 @@ func _refresh_collection_stats() -> void:
 
 
 func _add_stats_drop_row(drop: Dictionary, scale: float) -> void:
+    ## 创建一行产物图标、名称和终身收集数量，并登记数量 Label 以便增量更新。
 	var drop_id: String = String(drop.get("id", ""))
 	var row_panel: PanelContainer = PanelContainer.new()
 	row_panel.custom_minimum_size = Vector2(0.0, 52.0 * scale)
@@ -319,6 +342,7 @@ func _add_stats_drop_row(drop: Dictionary, scale: float) -> void:
 
 
 func _refresh_stats_summary() -> void:
+    ## 汇总全部产物的终身数量和已收集种类数。
 	var total: int = 0
 	var collected_types: int = 0
 	var type_count: int = 0
@@ -333,6 +357,7 @@ func _refresh_stats_summary() -> void:
 
 
 func apply_layout(viewport_size: Vector2) -> void:
+    ## 同时布局顶部 HUD、场景切换条、防守入口和统计弹窗。
 	var scale: float = _ui_scale(viewport_size)
 	var margin: float = 10.0 * scale
 
@@ -407,10 +432,12 @@ func apply_layout(viewport_size: Vector2) -> void:
 
 
 func _ui_scale(viewport_size: Vector2) -> float:
+    ## 以 iPhone 16 的 393pt 逻辑宽度作为 UI 缩放基准。
 	return maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
 
 
 func _rounded_style(bg: Color, border: Color, border_width: float, radius: float, scale: float) -> StyleBoxFlat:
+    ## 生成 HUD 和统计弹窗共用的圆角样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = bg
 	style.border_color = border
@@ -424,4 +451,5 @@ func _rounded_style(bg: Color, border: Color, border_width: float, radius: float
 
 
 func _set_control_font_color(control: Control, color: Color) -> void:
+    ## 统一设置 Label/Button 的主题颜色，避免重复写主题覆盖调用。
 	control.add_theme_color_override("font_color", color)

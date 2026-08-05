@@ -1,8 +1,12 @@
 extends Node
-## Loads static JSON config tables into memory at startup.
+## 静态配置数据库。
+##
+## 启动时读取 data/ 下的 JSON，并建立按 ID 索引，供 GameState、业务系统和 UI
+## 查询。这里不保存玩家进度，也不修改配置行；运行时变化统一放在 GameState。
 
 const DATA_DIR: String = "res://data/"
 
+# 原始配置数组保留顺序，用于 UI 展示；*_by_id 用于高频查询。
 var upgrades: Array = []
 var upgrades_by_id: Dictionary = {}
 var helpers: Array = []
@@ -22,6 +26,7 @@ var defense_spawn_weights: Dictionary = {"top": 60.0, "left": 20.0, "right": 20.
 
 
 func _ready() -> void:
+    ## 按依赖顺序加载配置：产物先于天赋，防守关卡单独建立敌人索引。
     var t0: int = Time.get_ticks_msec()
     _load_upgrades()
     _load_helpers()
@@ -32,6 +37,7 @@ func _ready() -> void:
 
 
 func _read_json(path: String) -> Variant:
+    ## 统一处理文件不存在、JSON 解析失败和原始数据返回。
     if not FileAccess.file_exists(path):
         push_error("Missing config file: %s" % path)
         return null
@@ -43,12 +49,14 @@ func _read_json(path: String) -> Variant:
 
 
 func _load_upgrades() -> void:
+    ## 读取通用升级、场景解锁和产物解锁表。
     upgrades.clear()
     upgrades_by_id.clear()
     _append_upgrades(DATA_DIR + "upgrades_unlocks.json")
 
 
 func _load_helpers() -> void:
+    ## 建立帮手数组和 helper_id 到配置行的索引。
     var data = _read_json(DATA_DIR + "helpers.json")
     if data == null:
         return
@@ -63,6 +71,7 @@ func _load_helpers() -> void:
 
 
 func _append_upgrades(path: String) -> void:
+    ## 兼容未来拆分多份升级表；重复 ID 以最后读取的配置为准。
     var data = _read_json(path)
     if data == null:
         return
@@ -74,6 +83,7 @@ func _append_upgrades(path: String) -> void:
 
 
 func _load_scenes() -> void:
+    ## 读取场景、产物池、背景和刷新参数，并补写每个产物的 scene_id。
     var data = _read_json(DATA_DIR + "scenes.json")
     if data == null:
         return
@@ -96,6 +106,7 @@ func _load_scenes() -> void:
 
 
 func _load_talents() -> void:
+    ## 读取天赋里程碑和四向节点，按 talent_id 建立快速索引。
     var data = _read_json(DATA_DIR + "talents.json")
     talents.clear()
     talents_by_id.clear()
@@ -114,6 +125,7 @@ func _load_talents() -> void:
 
 
 func _load_defense_levels() -> void:
+    ## 读取敌人类型、出怪权重和关卡波次，计算可用的最高关卡编号。
     var data = _read_json(DATA_DIR + "defense_levels.json")
     defense_levels.clear()
     defense_levels_by_id.clear()
@@ -139,14 +151,17 @@ func _load_defense_levels() -> void:
 
 
 func get_upgrades() -> Array:
+    ## 返回保持配置顺序的升级列表，调用方不应直接修改其中字段。
     return upgrades
 
 
 func get_upgrade(upgrade_id) -> Dictionary:
+    ## 按 ID 查询升级；未知 ID 返回空字典而不是 null。
     return upgrades_by_id.get(_normalize_id(upgrade_id), {})
 
 
 func get_upgrade_cost(upgrade_id, target_level: int) -> float:
+    ## 支持一次性解锁 cost 和等级成长 cost_base/cost_growth 两种价格模型。
     var row: Dictionary = get_upgrade(upgrade_id)
     if row.is_empty():
         return INF
@@ -158,22 +173,27 @@ func get_upgrade_cost(upgrade_id, target_level: int) -> float:
 
 
 func get_helpers() -> Array:
+    ## 返回帮手展示顺序。
     return helpers
 
 
 func get_helper(helper_id: String) -> Dictionary:
+    ## 查询单个帮手的静态能力和素材路径。
     return helpers_by_id.get(helper_id, {})
 
 
 func get_scenes() -> Array:
+    ## 返回场景顺序；场景切换和页签展示都依赖此顺序。
     return scenes
 
 
 func get_default_scene_id() -> String:
+    ## 返回新存档的默认场景 ID。
     return default_scene_id
 
 
 func get_default_unlocked_scenes() -> Array:
+    ## 收集所有标记 default_unlocked 的场景，至少保证默认场景存在。
     var out: Array = []
     for scene in scenes:
         if bool(scene.get("default_unlocked", false)):
@@ -184,14 +204,17 @@ func get_default_unlocked_scenes() -> Array:
 
 
 func get_scene(scene_id: String) -> Dictionary:
+    ## 查询场景配置，包括库存上限和候选产物。
     return scenes_by_id.get(scene_id, {})
 
 
 func get_scene_name(scene_id: String) -> String:
+    ## 将内部 ID 转为 UI 名称；未知 ID 回退显示 ID 本身。
     return String(get_scene(scene_id).get("name", scene_id))
 
 
 func get_scene_unlock_drop_ids(scene_id: String) -> Array:
+    ## 返回解锁场景时自动开放的基础产物。
     var scene: Dictionary = get_scene(scene_id)
     var out: Array = []
     for drop_id in scene.get("default_unlock_drop_ids", []):
@@ -200,6 +223,7 @@ func get_scene_unlock_drop_ids(scene_id: String) -> Array:
 
 
 func get_next_scene_id(scene_id: String) -> String:
+    ## 按配置顺序循环查询下一个场景，供旧版循环切换使用。
     if scenes.is_empty():
         return default_scene_id
     for i in range(scenes.size()):
@@ -209,6 +233,7 @@ func get_next_scene_id(scene_id: String) -> String:
 
 
 func get_scene_id_at_offset(scene_id: String, offset: int) -> String:
+    ## 按绝对数组位置查询目标场景；越界返回空字符串而不循环。
     var index: int = get_scene_index(scene_id)
     if index < 0:
         return ""
@@ -219,6 +244,7 @@ func get_scene_id_at_offset(scene_id: String, offset: int) -> String:
 
 
 func get_scene_index(scene_id: String) -> int:
+    ## 返回场景在配置数组中的位置，未找到返回 -1。
     for i in range(scenes.size()):
         if String(scenes[i].get("id", "")) == scene_id:
             return i
@@ -226,31 +252,38 @@ func get_scene_index(scene_id: String) -> int:
 
 
 func get_scene_drops(scene_id: String) -> Array:
+    ## 返回指定场景的全部候选产物，是否实际生成由 GameState 决定。
     var scene: Dictionary = get_scene(scene_id)
     return scene.get("drops", [])
 
 
 func get_drop(drop_id: String) -> Dictionary:
+    ## 从全局产物索引查询一条产物配置。
     return drops_by_id.get(drop_id, {})
 
 
 func get_drop_name(drop_id: String) -> String:
+    ## 提供统计弹窗和天赋条件共用的产物显示名。
     return String(get_drop(drop_id).get("name", drop_id))
 
 
 func get_talents() -> Array:
+    ## 返回按网格配置顺序排列的全部天赋节点。
     return talents
 
 
 func get_talent(talent_id: String) -> Dictionary:
+    ## 查询单个天赋节点的前置、产品条件和效果。
     return talents_by_id.get(talent_id, {})
 
 
 func get_talent_point_milestones() -> Array:
+    ## 返回里程碑副本，避免调用方排序时改变数据库内部顺序。
     return talent_point_milestones.duplicate()
 
 
 func get_default_unlocked_drops() -> Array:
+    ## 收集所有场景中默认开放的产物 ID。
     var out: Array = []
     for scene in scenes:
         for drop in scene.get("drops", []):
@@ -260,26 +293,32 @@ func get_default_unlocked_drops() -> Array:
 
 
 func get_defense_levels() -> Array:
+    ## 返回防守关卡配置顺序。
     return defense_levels
 
 
 func get_defense_level(level_id: int) -> Dictionary:
+    ## 查询单个防守关卡的波次和耐久配置。
     return defense_levels_by_id.get(level_id, {})
 
 
 func get_defense_enemy(enemy_id: String) -> Dictionary:
+    ## 查询单个敌人的速度、生命和素材配置。
     return defense_enemies_by_id.get(enemy_id, {})
 
 
 func get_defense_max_level() -> int:
+    ## 返回受配置 max_level 限制后的最高防守关卡。
     return defense_max_level
 
 
 func get_defense_spawn_weights() -> Dictionary:
+    ## 返回出怪口权重副本，避免战斗逻辑修改数据库。
     return defense_spawn_weights.duplicate()
 
 
 func _normalize_id(id):
+    ## 兼容 JSON 字典键在读档后变成字符串或数字的情况。
     match typeof(id):
         TYPE_FLOAT:
             return int(id)

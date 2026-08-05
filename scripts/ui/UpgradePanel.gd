@@ -1,5 +1,8 @@
 extends Control
-## Bottom panel: compact upgrade, scene, helper, and talent tabs.
+## 底部成长工具面板。
+##
+## 管理升级、场景、帮手和天赋四个主页签。升级/列表页使用覆盖输入层解决
+## “按钮上拖动无法滚动”的问题；天赋页使用 TalentTree 独立处理二维手势。
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 const TAB_PRICE: String = "price"
@@ -43,6 +46,7 @@ var _scene_transitioning: bool = false
 
 
 func _ready() -> void:
+	## 先创建所有动态控件，再订阅状态事件并做第一次刷新。
 	_build()
 	EventBus.currency_changed.connect(func(_a: float, _d: float): _refresh())
 	EventBus.upgrade_purchased.connect(func(_id, _lv: int): _refresh())
@@ -57,6 +61,7 @@ func _ready() -> void:
 
 
 func _build() -> void:
+	## 创建四个等宽主页签、升级子页签、纵向列表和天赋画布容器。
 	panel_container = PanelContainer.new()
 	panel_container.anchor_right = 1.0
 	panel_container.anchor_bottom = 1.0
@@ -144,6 +149,7 @@ func _build() -> void:
 
 
 func _build_upgrade_subtabs() -> void:
+	## 按通用、街道到工业园的配置顺序建立横向子页签。
 	upgrade_subtab_buttons.clear()
 	_add_upgrade_subtab(UPGRADE_SCOPE_GLOBAL, "通用")
 	for scene in ConfigDB.get_scenes():
@@ -153,6 +159,7 @@ func _build_upgrade_subtabs() -> void:
 
 
 func _add_upgrade_subtab(scope_id: String, label: String) -> void:
+	## 子页签本身忽略鼠标，由上层 overlay 统一判断点击还是水平拖动。
 	var btn: Button = Button.new()
 	btn.text = label
 	btn.tooltip_text = "轻点切换，按住可左右拖动"
@@ -162,6 +169,7 @@ func _add_upgrade_subtab(scope_id: String, label: String) -> void:
 
 
 func _select_tab(tab_id: String) -> void:
+	## 切换主工具页，并在进入天赋页时把网格重新聚焦到中心。
 	if _selected_tab == tab_id:
 		return
 	_selected_tab = tab_id
@@ -171,6 +179,7 @@ func _select_tab(tab_id: String) -> void:
 
 
 func _select_upgrade_scope(scope_id: String) -> void:
+	## 切换升级子页签，不改变已购买状态。
 	if _selected_upgrade_scope == scope_id:
 		return
 	_selected_upgrade_scope = scope_id
@@ -178,6 +187,7 @@ func _select_upgrade_scope(scope_id: String) -> void:
 
 
 func _on_upgrade_subtab_overlay_input(event: InputEvent) -> void:
+	## 统一处理子页签的滚轮、触摸、点击和水平拖动。
 	if event is InputEventMouseButton:
 		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
 		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
@@ -215,6 +225,7 @@ func _on_upgrade_subtab_overlay_input(event: InputEvent) -> void:
 
 
 func _begin_upgrade_subtab_pointer(pointer_x: float) -> void:
+	## 记录水平手势起点，超过阈值后才进入拖动状态。
 	_subtab_pointer_active = true
 	_subtab_dragging = false
 	_subtab_pointer_start_x = pointer_x
@@ -222,6 +233,7 @@ func _begin_upgrade_subtab_pointer(pointer_x: float) -> void:
 
 
 func _move_upgrade_subtab_pointer(pointer_x: float) -> void:
+	## 按指针增量移动横向 ScrollContainer。
 	if not _subtab_dragging:
 		var threshold: float = SUBTAB_DRAG_THRESHOLD_PT * _ui_scale(get_viewport_rect().size)
 		if absf(pointer_x - _subtab_pointer_start_x) < threshold:
@@ -233,6 +245,7 @@ func _move_upgrade_subtab_pointer(pointer_x: float) -> void:
 
 
 func _finish_upgrade_subtab_pointer(pointer_position: Vector2) -> void:
+	## 未发生拖动才按坐标选择子页签，避免松手误切换。
 	if not _subtab_pointer_active:
 		return
 	var should_select: bool = not _subtab_dragging
@@ -245,6 +258,7 @@ func _finish_upgrade_subtab_pointer(pointer_position: Vector2) -> void:
 
 
 func _upgrade_scope_at_local_position(pointer_position: Vector2) -> String:
+	## 将 overlay 坐标加回滚动偏移，找到实际命中的子页签。
 	var content_position: Vector2 = pointer_position + Vector2(float(upgrade_subtab_scroll.scroll_horizontal), 0.0)
 	for scope_id in upgrade_subtab_buttons.keys():
 		var btn: Button = upgrade_subtab_buttons.get(scope_id) as Button
@@ -254,6 +268,7 @@ func _upgrade_scope_at_local_position(pointer_position: Vector2) -> String:
 
 
 func _scroll_upgrade_subtabs_by(delta_x: float) -> void:
+	## 使用滚动条 page/max 限制横向偏移，防止露出空白区域。
 	if upgrade_subtab_scroll == null:
 		return
 	var horizontal_bar: HScrollBar = upgrade_subtab_scroll.get_h_scroll_bar()
@@ -263,6 +278,7 @@ func _scroll_upgrade_subtabs_by(delta_x: float) -> void:
 
 
 func _on_list_overlay_input(event: InputEvent) -> void:
+	## 统一处理升级、场景和帮手列表的滚轮、触摸和垂直拖动。
 	if event is InputEventMouseButton:
 		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
 		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
@@ -299,6 +315,7 @@ func _on_list_overlay_input(event: InputEvent) -> void:
 
 
 func _begin_list_pointer(pointer_position: Vector2) -> void:
+	## 记录列表手势起点，按钮区域也由此入口接收拖动。
 	_list_pointer_active = true
 	_list_dragging = false
 	_list_pointer_start = pointer_position
@@ -306,6 +323,7 @@ func _begin_list_pointer(pointer_position: Vector2) -> void:
 
 
 func _move_list_pointer(pointer_position: Vector2) -> void:
+	## 发生足够位移后只滚动列表，不触发按钮点击。
 	if not _list_dragging:
 		var threshold: float = LIST_DRAG_THRESHOLD_PT * _ui_scale(get_viewport_rect().size)
 		if pointer_position.distance_to(_list_pointer_start) < threshold:
@@ -317,6 +335,7 @@ func _move_list_pointer(pointer_position: Vector2) -> void:
 
 
 func _finish_list_pointer(pointer_position: Vector2) -> void:
+	## 静止轻点时查找最上层按钮，并用时间去重避免一次触摸重复购买。
 	if not _list_pointer_active:
 		return
 	var should_click: bool = not _list_dragging
@@ -335,6 +354,7 @@ func _finish_list_pointer(pointer_position: Vector2) -> void:
 
 
 func _list_button_at_position(pointer_position: Vector2) -> Button:
+	## 将视口坐标转换为列表内容坐标，再递归命中子按钮。
 	var content_position: Vector2 = pointer_position + Vector2(
 		float(list_scroll.scroll_horizontal),
 		float(list_scroll.scroll_vertical)
@@ -343,6 +363,7 @@ func _list_button_at_position(pointer_position: Vector2) -> Button:
 
 
 func _button_at_position_in_control(parent: Control, position_in_parent: Vector2) -> Button:
+	## 从上到下逆序检查子节点，使视觉上位于最上层的按钮优先命中。
 	var children: Array[Node] = parent.get_children()
 	for index in range(children.size() - 1, -1, -1):
 		var control: Control = children[index] as Control
@@ -361,6 +382,7 @@ func _button_at_position_in_control(parent: Control, position_in_parent: Vector2
 
 
 func _scroll_list_by(delta_y: float) -> void:
+	## 按滚动条边界改变列表垂直偏移。
 	if list_scroll == null:
 		return
 	var vertical_bar: VScrollBar = list_scroll.get_v_scroll_bar()
@@ -370,6 +392,7 @@ func _scroll_list_by(delta_y: float) -> void:
 
 
 func _refresh() -> void:
+	## 清理旧列表、更新页签可见性，并按当前页重建内容。
 	if list == null:
 		return
 	_clear_list()
@@ -394,6 +417,7 @@ func _refresh() -> void:
 
 
 func _build_upgrade_buttons() -> void:
+	## 只显示当前升级作用域的配置行，购买能力交给 UpgradeSystem 判断。
 	var rows: Array = _upgrades_for_selected_scope()
 	for row in rows:
 		var id = row.get("id", "")
@@ -404,6 +428,7 @@ func _build_upgrade_buttons() -> void:
 
 
 func _build_scene_buttons() -> void:
+	## 只显示场景解锁型升级，场景顺序来自配置而非 UI 写死。
 	for row in _scene_unlocks():
 		var id = row.get("id", "")
 		var btn: Button = _make_list_button(_upgrade_button_text(row))
@@ -413,6 +438,7 @@ func _build_scene_buttons() -> void:
 
 
 func _build_helper_buttons() -> void:
+	## 未购买帮手显示购买行，已购买帮手显示信息与上下阵按钮。
 	for row in ConfigDB.get_helpers():
 		var id: String = String(row.get("id", ""))
 		if GameState.has_helper(id):
@@ -425,6 +451,7 @@ func _build_helper_buttons() -> void:
 
 
 func _add_owned_helper_row(row: Dictionary) -> void:
+	## 构建已拥有帮手的双按钮行，并在场景过场期间锁定上下阵。
 	var helper_id: String = String(row.get("id", ""))
 	var row_container: HBoxContainer = HBoxContainer.new()
 	row_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -449,6 +476,7 @@ func _add_owned_helper_row(row: Dictionary) -> void:
 
 
 func _make_list_button(text: String) -> Button:
+	## 创建统一的列表按钮；实际点击由 overlay 在静止轻点时转发。
 	var btn: Button = Button.new()
 	btn.text = text
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -459,32 +487,38 @@ func _make_list_button(text: String) -> Button:
 
 
 func _on_buy_upgrade_pressed(upgrade_id) -> void:
+	## 将 UI 购买请求交给主场景中的 UpgradeSystem。
 	var system: UpgradeSystem = _upgrade_system()
 	if system != null:
 		system.buy(upgrade_id)
 
 
 func _on_buy_helper_pressed(helper_id: String) -> void:
+	## 将帮手购买请求交给 UpgradeSystem，避免 UI 直接扣钱。
 	var system: UpgradeSystem = _upgrade_system()
 	if system != null:
 		system.buy_helper(helper_id)
 
 
 func _on_helper_active_pressed(helper_id: String) -> void:
+	## 切换帮手上阵状态，场景中的角色刷新由事件监听者完成。
 	GameState.set_helper_active(helper_id, not GameState.is_helper_active(helper_id))
 
 
 func _on_scene_transition_started() -> void:
+	## 过场开始时锁定面板中的上下阵操作。
 	_scene_transitioning = true
 	_refresh()
 
 
 func _on_scene_transition_finished(_scene_id: String) -> void:
+	## 过场结束后恢复面板操作。
 	_scene_transitioning = false
 	_refresh()
 
 
 func _upgrade_button_text(row: Dictionary, include_scope: bool = true) -> String:
+	## 把名称、作用域、效果、等级、价格和锁定原因压缩成一行文案。
 	var id: String = String(row.get("id", ""))
 	var display_name: String = _upgrade_display_name(row)
 	var level: int = GameState.get_upgrade_level(id)
@@ -510,6 +544,7 @@ func _upgrade_button_text(row: Dictionary, include_scope: bool = true) -> String
 
 
 func _upgrade_display_name(row: Dictionary) -> String:
+	## 为通用升级追加每级效果，让玩家无需打开额外说明就能理解收益。
 	var name: String = String(row.get("name", "升级"))
 	var effect: float = float(row.get("effect_per_level", 0.0))
 	match String(row.get("type", "")):
@@ -523,12 +558,14 @@ func _upgrade_display_name(row: Dictionary) -> String:
 
 
 func _upgrade_scope_name(row: Dictionary) -> String:
+	## 将 global 或 scene_id 转为短中文作用域名。
 	if String(row.get("scope", "")) == UPGRADE_SCOPE_GLOBAL:
 		return "通用"
 	return ConfigDB.get_scene_name(_upgrade_scene_id(row))
 
 
 func _helper_button_text(row: Dictionary) -> String:
+	## 生成帮手购买/工作状态文案，不在这里计算帮手能力。
 	var helper_id: String = String(row.get("id", ""))
 	var cost: float = float(row.get("cost", 0.0))
 	var status: String = "%s 元" % BigNumber.format(cost)
@@ -544,6 +581,7 @@ func _helper_button_text(row: Dictionary) -> String:
 
 
 func _helper_owned_status(row: Dictionary) -> String:
+	## 将已购买帮手区分为工作中和已下阵。
 	var helper_id: String = String(row.get("id", ""))
 	if GameState.is_helper_active(helper_id):
 		return "工作中"
@@ -551,6 +589,7 @@ func _helper_owned_status(row: Dictionary) -> String:
 
 
 func _upgrades_for_selected_scope() -> Array:
+	## 按升级子页签筛选 global 或指定 scene_id 的非场景解锁项。
 	var out: Array = []
 	for row in ConfigDB.get_upgrades():
 		if String(row.get("type", "")) == "unlock_scene":
@@ -565,6 +604,7 @@ func _upgrades_for_selected_scope() -> Array:
 
 
 func _scene_unlocks() -> Array:
+	## 筛出专门显示在场景页签的 unlock_scene 项。
 	var out: Array = []
 	for row in ConfigDB.get_upgrades():
 		if String(row.get("type", "")) == "unlock_scene":
@@ -573,6 +613,7 @@ func _scene_unlocks() -> Array:
 
 
 func _upgrade_scene_id(row: Dictionary) -> String:
+	## 从显式 scene_id、unlock_scene_id 或产物归属推导升级作用场景。
 	var configured_scene_id: String = String(row.get("scene_id", ""))
 	if not configured_scene_id.is_empty():
 		return configured_scene_id
@@ -583,6 +624,7 @@ func _upgrade_scene_id(row: Dictionary) -> String:
 
 
 func _is_upgrade_target_unlocked(row: Dictionary) -> bool:
+	## 判断产物/场景目标是否已经被购买，通用等级升级不使用此状态。
 	match String(row.get("type", "")):
 		"unlock_drop":
 			return GameState.is_drop_unlocked(String(row.get("unlock_drop_id", "")))
@@ -592,6 +634,7 @@ func _is_upgrade_target_unlocked(row: Dictionary) -> bool:
 
 
 func _requirements_met(row: Dictionary) -> bool:
+	## 检查升级配置 requires 中的所有前置 ID。
 	for required_upgrade_id in row.get("requires", []):
 		if GameState.get_upgrade_level(required_upgrade_id) <= 0:
 			return false
@@ -599,6 +642,7 @@ func _requirements_met(row: Dictionary) -> bool:
 
 
 func _requirement_names(row: Dictionary) -> String:
+	## 将前置升级 ID 转成适合按钮显示的中文名称列表。
 	var names: Array = []
 	for required_upgrade_id in row.get("requires", []):
 		var required_row: Dictionary = ConfigDB.get_upgrade(required_upgrade_id)
@@ -607,6 +651,7 @@ func _requirement_names(row: Dictionary) -> String:
 
 
 func _scene_names(scene_ids: Array) -> String:
+	## 将帮手工作场景数组转换为短文本，空数组代表全场景。
 	if scene_ids.is_empty():
 		return "全场景"
 	var names: Array = []
@@ -616,11 +661,13 @@ func _scene_names(scene_ids: Array) -> String:
 
 
 func _clear_list() -> void:
+	## 清除动态列表项，不销毁固定页签和滚动容器。
 	for child in list.get_children():
 		child.queue_free()
 
 
 func _refresh_tabs() -> void:
+	## 设置四个主页签的选中/禁用视觉状态。
 	if price_tab_button == null or scene_tab_button == null or helper_tab_button == null or talent_tab_button == null:
 		return
 	price_tab_button.disabled = _selected_tab == TAB_PRICE
@@ -630,6 +677,7 @@ func _refresh_tabs() -> void:
 
 
 func _refresh_upgrade_subtabs() -> void:
+	## 更新升级子页签的 selected_subtab 元数据，样式层据此着色。
 	for scope_id in upgrade_subtab_buttons.keys():
 		var btn: Button = upgrade_subtab_buttons.get(scope_id) as Button
 		if btn != null:
@@ -637,10 +685,12 @@ func _refresh_upgrade_subtabs() -> void:
 
 
 func _upgrade_system() -> UpgradeSystem:
+	## 从主场景系统树查找购买系统，保持面板可独立构建。
 	return get_tree().root.get_node_or_null("Main/Systems/UpgradeSystem") as UpgradeSystem
 
 
 func apply_layout(viewport_size: Vector2) -> void:
+	## 统一设置底部面板、四个主页签、子页签和动态列表的尺寸主题。
 	var scale: float = _ui_scale(viewport_size)
 	if panel_container != null:
 		panel_container.add_theme_stylebox_override("panel", _panel_style(scale))
@@ -683,6 +733,7 @@ func apply_layout(viewport_size: Vector2) -> void:
 
 
 func _style_list_button(btn: Button, scale: float) -> void:
+	## 为普通购买行和帮手上下阵按钮分别提供固定高度与颜色。
 	var is_toggle: bool = bool(btn.get_meta("helper_toggle", false))
 	btn.custom_minimum_size = Vector2(56.0 * scale if is_toggle else 0.0, 38.0 * scale)
 	btn.add_theme_font_size_override("font_size", int((11.0 if is_toggle else 12.0) * scale))
@@ -704,6 +755,7 @@ func _style_list_button(btn: Button, scale: float) -> void:
 
 
 func _style_tab_button(btn: Button, scale: float) -> void:
+	## 四个主页签使用相同高度，宽度由 HBoxContainer 平分。
 	btn.custom_minimum_size = Vector2(0.0, 30.0 * scale)
 	btn.add_theme_font_size_override("font_size", int(12.0 * scale))
 	btn.add_theme_color_override("font_color", Color(0.16, 0.13, 0.18, 1.0))
@@ -711,6 +763,7 @@ func _style_tab_button(btn: Button, scale: float) -> void:
 
 
 func _style_upgrade_subtab_button(btn: Button, scale: float) -> void:
+	## 根据 selected_subtab 元数据生成紧凑的升级子页签样式。
 	var selected: bool = bool(btn.get_meta("selected_subtab", false))
 	btn.custom_minimum_size = Vector2(58.0 * scale, 26.0 * scale)
 	btn.add_theme_font_size_override("font_size", int(11.0 * scale))
@@ -724,10 +777,12 @@ func _style_upgrade_subtab_button(btn: Button, scale: float) -> void:
 
 
 func _ui_scale(viewport_size: Vector2) -> float:
+	## 以 393pt 为逻辑基准，保证四个页签在手机宽度下仍可读。
 	return maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
 
 
 func _panel_style(scale: float) -> StyleBoxFlat:
+	## 创建底部成长面板的浅色背景和边框。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0.96, 0.94, 0.99, 0.98)
 	style.border_color = Color(0.75, 0.68, 0.88, 1.0)
@@ -741,6 +796,7 @@ func _panel_style(scale: float) -> StyleBoxFlat:
 
 
 func _button_style(bg: Color, border: Color, scale: float) -> StyleBoxFlat:
+	## 创建列表/页签共用的圆角按钮样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = bg
 	style.border_color = border

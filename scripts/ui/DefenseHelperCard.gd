@@ -1,6 +1,9 @@
 class_name DefenseHelperCard
 extends PanelContainer
-## Draggable helper card used by the street-defense roster.
+## 防守玩法中的可拖动帮手卡片。
+##
+## 卡片只携带 helper_id 和视觉预览，不直接修改防守格子；
+## 拖放完成后由 DefenseSlot 发出分配请求。
 
 var helper_id: String = ""
 var helper_row: Dictionary = {}
@@ -9,6 +12,7 @@ var name_label: Label
 
 
 func configure(row: Dictionary, scale: float) -> void:
+    ## 从静态配置构建头像和名称，并按当前视口设置点击尺寸。
 	helper_row = row
 	helper_id = String(row.get("id", ""))
 	custom_minimum_size = Vector2(62.0, 92.0) * scale
@@ -41,6 +45,7 @@ func configure(row: Dictionary, scale: float) -> void:
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
+    ## 返回稳定的拖放字典，同时创建半透明预览；无 ID 时禁止拖动。
 	if helper_id.is_empty() or icon == null or icon.texture == null:
 		return null
 	var preview: TextureRect = TextureRect.new()
@@ -57,6 +62,7 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 
 
 func _card_style(scale: float) -> StyleBoxFlat:
+    ## 高对比边框保证卡片在竖屏小尺寸下仍可辨认。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0.94, 0.91, 0.82, 0.98)
 	style.border_color = Color(0.35, 0.31, 0.28, 1.0)

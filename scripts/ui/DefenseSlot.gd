@@ -1,6 +1,9 @@
 class_name DefenseSlot
 extends PanelContainer
-## One lane assignment target in street-defense mode.
+## 接收帮手拖放数据的防守格子。
+##
+## 格子保存当前分配 ID 并负责视觉反馈，阵容权威状态由 DefenseMode 管理。
+## helper_dropped 信号让拖放组件不需要反向查找主战斗脚本。
 
 signal helper_dropped(slot_index: int, helper_id: String)
 
@@ -12,6 +15,7 @@ var _scale: float = 1.0
 
 
 func configure(index: int, scale: float) -> void:
+    ## 初始化格子编号、占位图标和适配视口的尺寸。
 	slot_index = index
 	_scale = scale
 	custom_minimum_size = Vector2(62.0, 82.0) * scale
@@ -41,6 +45,7 @@ func configure(index: int, scale: float) -> void:
 
 
 func assign_helper(row: Dictionary) -> void:
+    ## 显示已部署帮手；空配置会退化为清空操作。
 	assigned_helper_id = String(row.get("id", ""))
 	icon.texture = load(String(row.get("sprite", ""))) as Texture2D
 	name_label.text = String(row.get("name", "帮手"))
@@ -49,6 +54,7 @@ func assign_helper(row: Dictionary) -> void:
 
 
 func clear_helper() -> void:
+    ## 恢复空格子视觉，不发送新的部署事件。
 	assigned_helper_id = ""
 	icon.texture = null
 	name_label.text = "+"
@@ -57,10 +63,12 @@ func clear_helper() -> void:
 
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+    ## 只接受 DefenseHelperCard 生成且包含 helper_id 的字典。
 	return typeof(data) == TYPE_DICTIONARY and String((data as Dictionary).get("type", "")) == "defense_helper"
 
 
 func _drop_data(_at_position: Vector2, data: Variant) -> void:
+    ## 将有效拖放转成高层信号，覆盖规则由 DefenseMode 决定。
 	var payload: Dictionary = data as Dictionary
 	var helper_id: String = String(payload.get("helper_id", ""))
 	if not helper_id.is_empty():
@@ -68,6 +76,7 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 
 
 func _slot_style(occupied: bool) -> StyleBoxFlat:
+    ## 占用与空闲使用不同底色，并保持固定边界避免布局跳动。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0.18, 0.22, 0.24, 0.94) if occupied else Color(0.12, 0.15, 0.17, 0.74)
 	style.border_color = Color(0.98, 0.76, 0.28, 1.0) if occupied else Color(0.78, 0.82, 0.76, 0.82)

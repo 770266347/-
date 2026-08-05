@@ -1,6 +1,10 @@
 class_name TalentTree
 extends Control
-## Pannable four-direction talent network for the bottom tool panel.
+## 可拖动的四向天赋网 UI。
+##
+## 节点视觉状态来自 TalentSystem/GameState，画布只负责预览、长按手势、平移
+## 和重置入口。所有节点按钮设置为 IGNORE，由 input_layer 统一接收点击与拖动，
+## 从而保证按住节点拖动时不会被 Button 抢走手势。
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 const HEADER_HEIGHT_PT: float = 36.0
@@ -31,12 +35,14 @@ class TalentLinkLayer extends Control:
 	var node_states: Dictionary = {}
 
 	func configure(new_rows: Array, centers: Dictionary, states: Dictionary) -> void:
+		## 接收当前帧节点中心和状态快照，避免绘制层直接读取业务状态。
 		rows = new_rows
 		node_centers = centers
 		node_states = states
 		queue_redraw()
 
 	func _draw() -> void:
+		## 以前置节点为起点绘制连接线，并用目标节点状态表达可达性。
 		for row in rows:
 			var talent_id: String = String(row.get("id", ""))
 			var end: Vector2 = node_centers.get(talent_id, Vector2.ZERO)
@@ -85,6 +91,7 @@ var _status_override: String = ""
 
 
 func _ready() -> void:
+	## 创建画布和节点后订阅回收统计/天赋事件，保证条件进度实时刷新。
 	_build()
 	EventBus.bottle_changed.connect(func(_amount: int, _delta: int): refresh())
 	EventBus.drop_collection_count_changed.connect(func(_id: String, _count: int, _delta: int): refresh())
@@ -96,6 +103,7 @@ func _ready() -> void:
 
 
 func _build() -> void:
+	## 建立标题、点数摘要、重置按钮、绘图层、节点层和统一输入层。
 	header = Control.new()
 	add_child(header)
 
@@ -166,6 +174,7 @@ func _build() -> void:
 
 
 func refresh() -> void:
+	## 根据当前点数、前置节点和产品条件刷新所有节点颜色及预览提示。
 	if points_label == null:
 		return
 	var available: int = GameState.get_available_talent_points()
@@ -202,6 +211,7 @@ func refresh() -> void:
 
 
 func _process(delta: float) -> void:
+	## 只有指针停留在节点上且没有拖动时累计长按时间，达到 1 秒才提交。
 	if not _pointer_active or _dragging or _long_press_triggered or _press_talent_id.is_empty():
 		return
 	_press_elapsed += delta
@@ -211,11 +221,13 @@ func _process(delta: float) -> void:
 
 
 func focus_center() -> void:
+	## 将画布重新居中；切换回天赋页签时使用，拖动位置不会污染下次入口。
 	_has_centered = false
 	call_deferred("apply_layout", get_viewport_rect().size)
 
 
 func apply_layout(viewport_size: Vector2) -> void:
+	## 在固定逻辑画布上布置节点，再按当前视口计算可见窗口和默认中心。
 	if header == null:
 		return
 	var scale: float = _ui_scale(viewport_size)
@@ -281,6 +293,7 @@ func apply_layout(viewport_size: Vector2) -> void:
 
 
 func _on_canvas_input(event: InputEvent) -> void:
+	## 将鼠标滚轮、鼠标拖动、触摸和屏幕拖动统一转换为二维平移手势。
 	if event is InputEventMouseButton:
 		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
 		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
@@ -317,6 +330,7 @@ func _on_canvas_input(event: InputEvent) -> void:
 
 
 func _begin_pointer(position: Vector2) -> void:
+	## 记录候选节点并立即展示预览；此时绝不解锁。
 	_pointer_active = true
 	_dragging = false
 	_pointer_start = position
@@ -330,6 +344,7 @@ func _begin_pointer(position: Vector2) -> void:
 
 
 func _move_pointer(position: Vector2) -> void:
+	## 超过拖动阈值后取消长按候选，并按增量移动画布。
 	if not _dragging:
 		var threshold: float = DRAG_THRESHOLD_PT * _ui_scale(get_viewport_rect().size)
 		if position.distance_to(_pointer_start) < threshold:
@@ -342,6 +357,7 @@ func _move_pointer(position: Vector2) -> void:
 
 
 func _finish_pointer(position: Vector2) -> void:
+	## 释放只结束手势；轻点已经在 begin 阶段展示预览，不会触发加点。
 	if not _pointer_active:
 		return
 	var should_click: bool = not _dragging
@@ -355,6 +371,7 @@ func _finish_pointer(position: Vector2) -> void:
 
 
 func _talent_at_position(viewport_position: Vector2) -> String:
+	## 将视口坐标还原到画布坐标，按节点层级找出被点击的节点 ID。
 	var canvas_position: Vector2 = viewport_position - _pan
 	var rows: Array = ConfigDB.get_talents()
 	for index in range(rows.size() - 1, -1, -1):
@@ -367,6 +384,7 @@ func _talent_at_position(viewport_position: Vector2) -> String:
 
 
 func _activate_talent(talent_id: String) -> void:
+	## 仅由长按计时触发，调用 TalentSystem 并刷新结果/阻塞原因。
 	var row: Dictionary = ConfigDB.get_talent(talent_id)
 	var system: Node = _talent_system()
 	if GameState.is_talent_unlocked(talent_id):
@@ -379,6 +397,7 @@ func _activate_talent(talent_id: String) -> void:
 
 
 func _on_reset_pressed() -> void:
+	## 重置全部已点亮节点；TalentSystem 负责返还点数并立即保存。
 	var system: Node = _talent_system()
 	if system == null or not bool(system.call("reset")):
 		return
@@ -388,6 +407,7 @@ func _on_reset_pressed() -> void:
 
 
 func _refresh_preview() -> void:
+	## 展示节点名称、效果、产品收集进度、锁定原因和当前可执行动作。
 	if preview_panel == null:
 		return
 	if _selected_talent_id.is_empty():
@@ -427,6 +447,7 @@ func _refresh_preview() -> void:
 
 
 func _set_pan(value: Vector2) -> void:
+	## 将画布位置限制在内容边界内，避免拖动后看到无意义的空白区域。
 	var minimum: Vector2 = Vector2(
 		minf(0.0, canvas_viewport.size.x - canvas.size.x),
 		minf(0.0, canvas_viewport.size.y - canvas.size.y)
@@ -439,6 +460,7 @@ func _set_pan(value: Vector2) -> void:
 
 
 func _style_node(button: Button, row: Dictionary, state: String) -> void:
+	## 以分支颜色和 unlocked/available/locked 状态生成节点主题。
 	if button == null:
 		return
 	var branch: String = String(row.get("branch", "core"))
@@ -462,6 +484,7 @@ func _style_node(button: Button, row: Dictionary, state: String) -> void:
 
 
 func _node_style(fill: Color, border: Color) -> StyleBoxFlat:
+	## 生成圆形节点样式，节点尺寸由 apply_layout 统一控制。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = fill
 	style.border_color = border
@@ -475,6 +498,7 @@ func _node_style(fill: Color, border: Color) -> StyleBoxFlat:
 
 
 func _preview_style(scale: float) -> StyleBoxFlat:
+	## 生成覆盖在画布上方的预览提示样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0.16, 0.20, 0.21, 0.96)
 	style.border_color = Color(0.57, 0.72, 0.69, 0.9)
@@ -488,6 +512,7 @@ func _preview_style(scale: float) -> StyleBoxFlat:
 
 
 func _reset_style(fill: Color, scale: float) -> StyleBoxFlat:
+	## 生成紧凑的重置按钮样式，并保持禁用态仍可辨识。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = fill
 	style.border_color = Color(0.55, 0.42, 0.42, 1.0)
@@ -497,8 +522,10 @@ func _reset_style(fill: Color, scale: float) -> StyleBoxFlat:
 
 
 func _talent_system() -> Node:
+	## 通过 Main/Systems 查找系统，避免 UI 与具体节点脚本强耦合。
 	return get_tree().root.get_node_or_null("Main/Systems/TalentSystem")
 
 
 func _ui_scale(viewport_size: Vector2) -> float:
+	## 以 393pt 逻辑宽度计算天赋网节点和文字尺寸。
 	return maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)

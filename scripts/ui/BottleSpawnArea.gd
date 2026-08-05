@@ -1,6 +1,12 @@
 class_name BottleSpawnArea
 extends Control
-## Central play field that spawns clickable collectables by current scene.
+## 主回收场景控制器。
+##
+## 维护五个场景的后台生产计时器和当前场景的可视节点。后台库存归 GameState
+## 所有，当前场景最多只渲染 max_on_screen 个节点。切换场景时保留库存和序列号，
+## 传送门状态机负责帮手离场/入场，帮手 AI 负责预约唯一目标并调用统一结算。
+
+# 产物、帮手和过场节点使用不同 z_index，保证点击层级稳定。
 
 const FALLBACK_TEXTURE: Texture2D = preload("res://assets/bottle.svg")
 const BASE_LOGICAL_WIDTH: float = 393.0
@@ -45,6 +51,7 @@ var _defense_mode_active: bool = false
 
 
 func _ready() -> void:
+	## 创建背景、库存计数器并订阅场景、产物和帮手事件。
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_rng.randomize()
@@ -66,6 +73,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	## 普通状态推进后台生产、当前场景同步和帮手 AI；过场时只推进状态机。
 	_update_scene_production(delta)
 	if _defense_mode_active:
 		return
@@ -78,6 +86,7 @@ func _process(delta: float) -> void:
 
 
 func set_defense_mode_active(active: bool) -> void:
+	## 防守模式打开时暂停产物输入和帮手工作，返回时重新寻找目标。
 	_defense_mode_active = active
 	_drop_input_enabled = not active
 	if active:
@@ -85,6 +94,7 @@ func set_defense_mode_active(active: bool) -> void:
 
 
 func _build_background() -> void:
+	## 创建不接收点击的背景纹理，避免背景静态元素抢产物输入。
 	_background = TextureRect.new()
 	_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -95,6 +105,7 @@ func _build_background() -> void:
 
 
 func _build_empty_label() -> void:
+	## 候选产物池为空时显示当前场景的空状态提示。
 	_empty_label = Label.new()
 	_empty_label.text = "需要升级解锁这里的回收物"
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -108,6 +119,7 @@ func _build_empty_label() -> void:
 
 
 func _build_inventory_counter() -> void:
+	## 创建右上角当前库存/经过升级后的场景容量显示。
 	_inventory_panel = PanelContainer.new()
 	_inventory_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_inventory_panel.z_index = OVERLAY_Z_INDEX
@@ -121,6 +133,7 @@ func _build_inventory_counter() -> void:
 
 
 func _apply_scene() -> void:
+	## 加载当前场景背景、清理旧画面节点并按后台库存恢复新节点。
 	var scene: Dictionary = _current_scene()
 	var texture: Texture2D = load(String(scene.get("background", ""))) as Texture2D
 	if texture != null:
@@ -134,6 +147,7 @@ func _apply_scene() -> void:
 
 
 func _render_current_scene_inventory() -> void:
+	## 只渲染场景 max_on_screen 预算内的库存，千级库存不会全部实例化。
 	var visible_limit: int = _scene_visible_limit(GameState.current_scene_id)
 	var inventory: Array = GameState.get_scene_drop_ids(GameState.current_scene_id)
 	var serials: Array = GameState.get_scene_drop_serials(GameState.current_scene_id)
@@ -145,6 +159,7 @@ func _render_current_scene_inventory() -> void:
 
 
 func _spawn_drop(drop: Dictionary, serial: int, animate: bool = true) -> void:
+	## 用稳定 serial 创建一项产物节点；serial 决定位置，切场景后仍可复现。
 	if drop.is_empty():
 		return
 
@@ -199,6 +214,7 @@ func _spawn_drop(drop: Dictionary, serial: int, animate: bool = true) -> void:
 
 
 func _random_drop_position() -> Vector2:
+	## 为新产物生成一次随机位置，避开顶部 HUD 和场景边缘。
 	var scale: float = _ui_scale()
 	var drop_size: Vector2 = _drop_size()
 	var min_x: float = SPAWN_MARGIN_PT * scale
@@ -209,6 +225,7 @@ func _random_drop_position() -> Vector2:
 
 
 func _drop_position_for_serial(scene_id: String, serial: int) -> Vector2:
+	## 将持久化序列号映射为稳定的伪随机位置，避免切场景时产物乱跳。
 	if serial <= 0:
 		return _random_drop_position()
 	var placement: Vector2 = _drop_placement_for_serial(scene_id, serial)
@@ -222,6 +239,7 @@ func _drop_position_for_serial(scene_id: String, serial: int) -> Vector2:
 
 
 func _drop_placement_for_serial(scene_id: String, serial: int) -> Vector2:
+	## 混合场景与序列号生成种子，避免连续产物形成斜线或规则阵列。
 	var scene_seed: int = 0
 	for index in range(scene_id.length()):
 		scene_seed = int(posmod(scene_seed * 131 + scene_id.unicode_at(index), DROP_PLACEMENT_MODULUS))
@@ -234,6 +252,7 @@ func _drop_placement_for_serial(scene_id: String, serial: int) -> Vector2:
 
 
 func _gui_input(event: InputEvent) -> void:
+	## 处理鼠标/触摸点击，并通过时间去重防止一次输入收集多个产物。
 	var pointer_position: Vector2
 	var pressed: bool = false
 	if event is InputEventMouseButton:
@@ -262,6 +281,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _top_drop_at_position(pointer_position: Vector2) -> TextureRect:
+	## 产物重叠时按 z_index、serial 和节点顺序只选最上层一个。
 	var top_item: TextureRect = null
 	var top_z_index: int = -1
 	var top_child_index: int = -1
@@ -282,6 +302,7 @@ func _top_drop_at_position(pointer_position: Vector2) -> TextureRect:
 
 
 func _update_drop_layer(item: TextureRect, glow: TextureRect) -> void:
+	## 根据产物位置和唯一层级更新 z_index 与选中光晕。
 	var logical_y: float = item.position.y / _ui_scale()
 	item.z_index = DROP_Z_BASE + clampi(int(round(logical_y * 2.0)), 0, 2000)
 	if is_instance_valid(glow):
@@ -289,6 +310,7 @@ func _update_drop_layer(item: TextureRect, glow: TextureRect) -> void:
 
 
 func _collect_drop_item(item: TextureRect) -> bool:
+	## 先按 serial 从 GameState 移除实例，再调用 ProductionSystem，确保只结算一次。
 	if item == null or not is_instance_valid(item):
 		return false
 	if bool(item.get_meta("collected", false)):
@@ -310,6 +332,7 @@ func _collect_drop_item(item: TextureRect) -> bool:
 
 
 func _despawn_drop(item: TextureRect) -> void:
+	## 播放收集动画后释放画面节点；后台库存已在收集前完成扣除。
 	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var glow: TextureRect = item.get_meta("glow") as TextureRect if item.has_meta("glow") else null
 	var tween: Tween = create_tween()
@@ -325,6 +348,7 @@ func _despawn_drop(item: TextureRect) -> void:
 
 
 func _clear_active_drops() -> void:
+	## 仅清理当前画面节点，不清空任何场景后台库存。
 	for child in get_children():
 		var control: Control = child as Control
 		if control == null:
@@ -335,6 +359,7 @@ func _clear_active_drops() -> void:
 
 
 func _sync_current_scene_visible_drops() -> void:
+	## 在库存变化后补齐或移除画面节点，使渲染数量跟随后台库存。
 	if _transition_state != TRANSITION_IDLE:
 		return
 	var visible_limit: int = _scene_visible_limit(GameState.current_scene_id)
@@ -360,6 +385,7 @@ func _sync_current_scene_visible_drops() -> void:
 
 
 func _update_scene_production(delta: float) -> void:
+	## 为所有已解锁场景独立推进计时器，离开当前场景也不会停止生产。
 	for scene in ConfigDB.get_scenes():
 		var scene_id: String = String(scene.get("id", ""))
 		if scene_id.is_empty() or not GameState.is_scene_unlocked(scene_id):
@@ -381,6 +407,7 @@ func _update_scene_production(delta: float) -> void:
 
 
 func _reset_scene_spawn_timer(scene_id: String, first_delay: float = -1.0) -> void:
+	## 重置单场景计时器；生成倍率在下一次计时检查时读取。
 	if first_delay >= 0.0:
 		_scene_spawn_timers[scene_id] = first_delay
 		return
@@ -395,6 +422,7 @@ func _reset_scene_spawn_timer(scene_id: String, first_delay: float = -1.0) -> vo
 
 
 func _reset_all_scene_spawn_timers(first_delay: float = -1.0) -> void:
+	## 为全部已解锁场景建立独立计时器。
 	for scene in ConfigDB.get_scenes():
 		var scene_id: String = String(scene.get("id", ""))
 		if not scene_id.is_empty() and GameState.is_scene_unlocked(scene_id):
@@ -402,6 +430,7 @@ func _reset_all_scene_spawn_timers(first_delay: float = -1.0) -> void:
 
 
 func _on_drop_collected(drop_name: String, amount: int, cash_amount: float, screen_pos: Vector2) -> void:
+	## 只处理收集后的飘字，资源已经由 ProductionSystem/GameState 结算。
 	if screen_pos == Vector2.ZERO:
 		return
 
@@ -422,6 +451,7 @@ func _on_drop_collected(drop_name: String, amount: int, cash_amount: float, scre
 
 
 func _on_scene_switch_requested(offset: int) -> void:
+	## 校验目标场景后启动传送门过场；过场中重复请求直接忽略。
 	if _transition_state != TRANSITION_IDLE or offset == 0:
 		return
 	var target_scene_id: String = ConfigDB.get_scene_id_at_offset(GameState.current_scene_id, offset)
@@ -445,6 +475,7 @@ func _on_scene_switch_requested(offset: int) -> void:
 
 
 func _update_scene_transition(delta: float) -> void:
+	## 根据 EXITING/ENTERING 状态推进帮手传送，完成后才切换场景。
 	match _transition_state:
 		TRANSITION_EXITING:
 			_update_helpers_exiting(delta)
@@ -453,6 +484,7 @@ func _update_scene_transition(delta: float) -> void:
 
 
 func _update_helpers_exiting(delta: float) -> void:
+	## 将全部上阵帮手移动到当前场景对应方向的传送门。
 	var helpers: Array = _helper_nodes()
 	if helpers.is_empty():
 		_transition_timer -= delta
@@ -482,6 +514,7 @@ func _update_helpers_exiting(delta: float) -> void:
 
 
 func _switch_to_transition_target() -> void:
+	## 所有帮手离场后切换背景和库存画面，并创建另一侧入口传送门。
 	if not GameState.set_current_scene_id(_transition_target_scene_id):
 		_finish_scene_transition()
 		return
@@ -504,6 +537,7 @@ func _switch_to_transition_target() -> void:
 
 
 func _update_helpers_entering(delta: float) -> void:
+	## 让帮手依次从新场景传送门进入，全部到位后恢复自动拾取。
 	var helpers: Array = _helper_nodes()
 	if helpers.is_empty():
 		_transition_timer -= delta
@@ -542,6 +576,7 @@ func _update_helpers_entering(delta: float) -> void:
 
 
 func _finish_scene_transition() -> void:
+	## 关闭传送门、恢复输入和生产，并广播过场结束事件。
 	if is_instance_valid(_transition_portal):
 		_transition_portal.queue_free()
 	_transition_portal = null
@@ -563,6 +598,7 @@ func _finish_scene_transition() -> void:
 
 
 func _create_transition_portal(on_right: bool) -> void:
+	## 创建可视传送门；传送门只提供反馈，不参与产物点击。
 	if is_instance_valid(_transition_portal):
 		_transition_portal.queue_free()
 	var scale: float = _ui_scale()
@@ -597,6 +633,7 @@ func _create_transition_portal(on_right: bool) -> void:
 
 
 func _transition_portal_position(on_right: bool, portal_size: Vector2) -> Vector2:
+	## 根据切换方向计算传送门的屏幕边缘位置。
 	var scale: float = _ui_scale()
 	var center_y: float = clampf(size.y * 0.55, TOP_RESERVED_PT * scale + portal_size.y * 0.5, size.y - portal_size.y * 0.5 - 24.0 * scale)
 	var x: float = size.x - portal_size.x * 0.65 if on_right else -portal_size.x * 0.35
@@ -604,12 +641,14 @@ func _transition_portal_position(on_right: bool, portal_size: Vector2) -> Vector
 
 
 func _transition_portal_center() -> Vector2:
+	## 返回当前传送门中心，过场移动统一使用此坐标。
 	if not is_instance_valid(_transition_portal):
 		return Vector2(size.x * 0.5, size.y * 0.5)
 	return _transition_portal.position + _transition_portal.size * 0.5
 
 
 func _move_helper_during_transition(helper: TextureRect, target_center: Vector2, speed_pt: float, delta: float) -> void:
+	## 过场移动允许帮手抵达屏幕边缘，不使用普通工作区域边界。
 	var helper_center: Vector2 = helper.position + helper.size * 0.5
 	var offset: Vector2 = target_center - helper_center
 	var distance: float = offset.length()
@@ -621,6 +660,7 @@ func _move_helper_during_transition(helper: TextureRect, target_center: Vector2,
 
 
 func _helper_transition_entry_position(index: int, helper_count: int) -> Vector2:
+	## 为入场帮手生成错开的初始位置，避免多个角色重叠成一个点。
 	var scale: float = _ui_scale()
 	var helper_size: Vector2 = _helper_size()
 	var center_y: float = size.y * 0.55
@@ -637,6 +677,7 @@ func _helper_transition_entry_position(index: int, helper_count: int) -> Vector2
 
 
 func _helper_nodes() -> Array:
+	## 收集当前场景全部已上阵帮手节点。
 	var out: Array = []
 	for child in get_children():
 		var helper: TextureRect = child as TextureRect
@@ -646,6 +687,7 @@ func _helper_nodes() -> Array:
 
 
 func _set_active_drops_input(enabled: bool) -> void:
+	## 过场、防守或弹窗状态通过此入口统一锁定产物输入。
 	_drop_input_enabled = enabled
 	for child in get_children():
 		var item: TextureRect = child as TextureRect
@@ -654,6 +696,7 @@ func _set_active_drops_input(enabled: bool) -> void:
 
 
 func _portal_style(bg: Color, border: Color, border_width: float, scale: float) -> StyleBoxFlat:
+	## 生成传送门发光边框样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = bg
 	style.border_color = border
@@ -663,24 +706,29 @@ func _portal_style(bg: Color, border: Color, border_width: float, scale: float) 
 
 
 func _on_scene_changed(_scene_id: String) -> void:
+	## GameState 场景变化的兜底刷新入口，正常切换由过场状态机驱动。
 	_apply_scene()
 
 
 func _on_scene_inventory_changed(scene_id: String) -> void:
+	## 当前场景库存变化时同步可见节点和右上角计数器。
 	if scene_id == GameState.current_scene_id:
 		_refresh_inventory_counter()
 
 
 func _on_unlocked_drops_changed() -> void:
+	## 产物解锁后刷新空状态、候选池和当前画面。
 	_update_empty_state(_get_available_drops())
 	_reset_all_scene_spawn_timers(0.1)
 
 
 func _on_scene_unlocked(scene_id: String) -> void:
+	## 新场景解锁后创建其后台计时器，不改变玩家当前场景。
 	_reset_scene_spawn_timer(scene_id, 0.1)
 
 
 func _on_upgrade_purchased(upgrade_id, _new_level: int) -> void:
+	## 通用刷新升级购买后重置相关计时器，其他升级无需重建节点。
 	var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
 	if String(row.get("type", "")) == "global_spawn":
 		_reset_all_scene_spawn_timers(0.05)
@@ -688,15 +736,18 @@ func _on_upgrade_purchased(upgrade_id, _new_level: int) -> void:
 
 
 func _on_helper_purchased(_helper_id: String) -> void:
+	## 新帮手购买默认上阵，立即加入当前场景并开始寻找目标。
 	_refresh_helpers()
 
 
 func _on_helper_active_changed(_helper_id: String, _active: bool) -> void:
+	## 上下阵变化后重新生成帮手节点，预约目标由刷新过程重新建立。
 	_refresh_helpers()
 	_relayout_helpers()
 
 
 func _refresh_helpers() -> void:
+	## 清理已有帮手节点，并按 active_helpers 重新生成。
 	var wanted_ids: Dictionary = {}
 	var spawn_index: int = 0
 	for row in ConfigDB.get_helpers():
@@ -722,6 +773,7 @@ func _refresh_helpers() -> void:
 
 
 func _spawn_helper(row: Dictionary, spawn_index: int) -> void:
+	## 创建帮手运行节点并写入目标、巡游点和预约所需的元数据。
 	var helper: TextureRect = TextureRect.new()
 	var texture: Texture2D = load(String(row.get("sprite", ""))) as Texture2D
 	if texture != null:
@@ -751,6 +803,7 @@ func _spawn_helper(row: Dictionary, spawn_index: int) -> void:
 
 
 func _update_helpers(delta: float) -> void:
+	## 遍历帮手，逐个推进寻找、移动、收集或巡游状态。
 	for child in get_children():
 		var helper: TextureRect = child as TextureRect
 		if helper == null or helper.is_queued_for_deletion() or not bool(helper.get_meta("is_helper", false)):
@@ -759,6 +812,7 @@ func _update_helpers(delta: float) -> void:
 
 
 func _update_helper(helper: TextureRect, delta: float) -> void:
+	## 单个帮手循环：验证目标、预约、移动、冷却并调用统一收集。
 	var row: Dictionary = helper.get_meta("config", {})
 	if row.is_empty() or not _helper_can_work_here(row):
 		_release_helper_target(helper)
@@ -801,6 +855,7 @@ func _update_helper(helper: TextureRect, delta: float) -> void:
 
 
 func _update_helper_wander(helper: TextureRect, row: Dictionary, delta: float) -> void:
+	## 没有目标时让帮手以较低速度在工作区域内巡游。
 	if not helper.has_meta("wander_target"):
 		helper.set_meta("wander_target", _random_helper_center_position())
 	var wander_target: Vector2 = helper.get_meta("wander_target")
@@ -816,6 +871,7 @@ func _update_helper_wander(helper: TextureRect, row: Dictionary, delta: float) -
 
 
 func _find_helper_target(helper: TextureRect, row: Dictionary) -> TextureRect:
+	## 按距离选择最近可用目标，并尊重 preferred_types 过滤。
 	var preferred_types: Array = row.get("preferred_types", [])
 	var best_target: TextureRect = null
 	var best_distance: float = INF
@@ -836,6 +892,7 @@ func _find_helper_target(helper: TextureRect, row: Dictionary) -> TextureRect:
 
 
 func _is_valid_helper_target(item: TextureRect, row: Dictionary, helper: TextureRect = null) -> bool:
+	## 检查节点有效性、场景归属、产物类型和其他帮手预约状态。
 	if item == null or not is_instance_valid(item):
 		return false
 	if item.is_queued_for_deletion():
@@ -853,6 +910,7 @@ func _is_valid_helper_target(item: TextureRect, row: Dictionary, helper: Texture
 
 
 func _reserve_helper_target(helper: TextureRect, item: TextureRect) -> bool:
+	## 用帮手实例 ID 预约产物，解决多个帮手抢同一目标的问题。
 	var helper_instance_id: int = int(helper.get_instance_id())
 	var reservation_owner: int = _drop_reservation_owner(item)
 	if reservation_owner != 0 and reservation_owner != helper_instance_id:
@@ -863,6 +921,7 @@ func _reserve_helper_target(helper: TextureRect, item: TextureRect) -> bool:
 
 
 func _release_helper_target(helper: TextureRect) -> void:
+	## 收集、失效、下阵或切场景时释放目标预约。
 	var target: TextureRect = helper.get_meta("target") as TextureRect if helper.has_meta("target") else null
 	if target != null and is_instance_valid(target):
 		var helper_instance_id: int = int(helper.get_instance_id())
@@ -872,6 +931,7 @@ func _release_helper_target(helper: TextureRect) -> void:
 
 
 func _drop_reservation_owner(item: TextureRect) -> int:
+	## 清理已释放帮手留下的预约，返回当前有效预约者 ID。
 	var owner_id: int = int(item.get_meta("reserved_helper_instance_id", 0))
 	if owner_id <= 0:
 		return 0
@@ -883,6 +943,7 @@ func _drop_reservation_owner(item: TextureRect) -> int:
 
 
 func _move_helper_toward(helper: TextureRect, target_center: Vector2, speed_pt: float, delta: float) -> void:
+	## 使用速度、边界和水平朝向更新位置，不负责到达后的业务状态。
 	var helper_center: Vector2 = helper.position + helper.size * 0.5
 	var offset: Vector2 = target_center - helper_center
 	var distance: float = offset.length()
@@ -895,15 +956,18 @@ func _move_helper_toward(helper: TextureRect, target_center: Vector2, speed_pt: 
 
 
 func _helper_distance_to(helper: TextureRect, target_center: Vector2) -> float:
+	## 返回帮手中心到目标中心的距离，收集半径判断使用此结果。
 	return (helper.position + helper.size * 0.5).distance_to(target_center)
 
 
 func _helper_can_work_here(row: Dictionary) -> bool:
+	## 空 scenes 表示全场景工作，否则只允许配置场景。
 	var scene_ids: Array = row.get("scenes", [])
 	return scene_ids.is_empty() or scene_ids.has(GameState.current_scene_id)
 
 
 func _get_helper_node(helper_id: String) -> TextureRect:
+	## 按帮手 ID 查找当前场景运行节点。
 	for child in get_children():
 		var helper: TextureRect = child as TextureRect
 		if helper != null and not helper.is_queued_for_deletion() and bool(helper.get_meta("is_helper", false)) and String(helper.get_meta("helper_id", "")) == helper_id:
@@ -912,6 +976,7 @@ func _get_helper_node(helper_id: String) -> TextureRect:
 
 
 func _reset_helper_targets() -> void:
+	## 场景变化或生产池更新后释放全部预约并生成新的巡游点。
 	for child in get_children():
 		var helper: TextureRect = child as TextureRect
 		if helper != null and bool(helper.get_meta("is_helper", false)):
@@ -920,6 +985,7 @@ func _reset_helper_targets() -> void:
 
 
 func _helper_spawn_position(spawn_index: int) -> Vector2:
+	## 初次生成时按列布局帮手，随后由 AI 接管移动。
 	var scale: float = _ui_scale()
 	var column: int = spawn_index % HELPER_SPAWN_COLUMNS
 	var row: int = floori(float(spawn_index) / float(HELPER_SPAWN_COLUMNS))
@@ -929,6 +995,7 @@ func _helper_spawn_position(spawn_index: int) -> Vector2:
 
 
 func _random_helper_center_position() -> Vector2:
+	## 在避开 HUD 和边缘的工作区域内随机生成巡游目标。
 	var scale: float = _ui_scale()
 	var helper_size: Vector2 = _helper_size()
 	var min_x: float = HELPER_WANDER_MARGIN_PT * scale + helper_size.x * 0.5
@@ -939,6 +1006,7 @@ func _random_helper_center_position() -> Vector2:
 
 
 func _clamp_helper_position(position: Vector2) -> Vector2:
+	## 将帮手限制在可工作区域，避免遮挡顶部状态栏或离开场景。
 	var scale: float = _ui_scale()
 	var helper_size: Vector2 = _helper_size()
 	var min_x: float = HELPER_WANDER_MARGIN_PT * scale
@@ -949,6 +1017,7 @@ func _clamp_helper_position(position: Vector2) -> Vector2:
 
 
 func _current_scene() -> Dictionary:
+	## 获取当前场景配置，异常 ID 时回退默认场景。
 	var scene: Dictionary = ConfigDB.get_scene(GameState.current_scene_id)
 	if scene.is_empty():
 		scene = ConfigDB.get_scene(ConfigDB.get_default_scene_id())
@@ -956,14 +1025,17 @@ func _current_scene() -> Dictionary:
 
 
 func _scene_visible_limit(scene_id: String) -> int:
+	## 返回画面节点预算，不等同于后台库存上限。
 	return maxi(0, int(ConfigDB.get_scene(scene_id).get("max_on_screen", 0)))
 
 
 func _get_available_drops() -> Array:
+	## 获取当前场景已经解锁的候选产物。
 	return _get_available_drops_for_scene(GameState.current_scene_id)
 
 
 func _get_available_drops_for_scene(scene_id: String) -> Array:
+	## 按场景归属和 GameState 解锁状态过滤候选产物。
 	var out: Array = []
 	for drop in ConfigDB.get_scene_drops(scene_id):
 		if GameState.is_drop_unlocked(String(drop.get("id", ""))):
@@ -972,6 +1044,7 @@ func _get_available_drops_for_scene(scene_id: String) -> Array:
 
 
 func _pick_weighted_drop(drops: Array) -> Dictionary:
+	## 根据 weight 做一次加权随机选择；零权重产物不获得概率。
 	if drops.is_empty():
 		return {}
 	var total_weight: float = 0.0
@@ -989,11 +1062,13 @@ func _pick_weighted_drop(drops: Array) -> Dictionary:
 
 
 func _update_empty_state(drops: Array) -> void:
+	## 候选池为空时显示提示，否则隐藏空状态标签。
 	if _empty_label != null:
 		_empty_label.visible = drops.is_empty()
 
 
 func _refresh_inventory_counter() -> void:
+	## 显示后台库存数量/经过升级和天赋后的容量上限。
 	if _inventory_label == null:
 		return
 	_inventory_label.text = "产物 %d/%d" % [
@@ -1003,6 +1078,7 @@ func _refresh_inventory_counter() -> void:
 
 
 func apply_layout(viewport_size: Vector2) -> void:
+	## 布局背景、计数器、产物和帮手，并在尺寸变化后保持稳定位置。
 	var scale: float = _ui_scale_from_viewport(viewport_size)
 	if _background != null:
 		_background.size = size
@@ -1022,14 +1098,17 @@ func apply_layout(viewport_size: Vector2) -> void:
 
 
 func _drop_size() -> Vector2:
+	## 返回按当前缩放后的产物节点尺寸。
 	return DROP_SIZE_PT * _ui_scale()
 
 
 func _helper_size() -> Vector2:
+	## 返回按当前缩放后的帮手节点尺寸。
 	return HELPER_SIZE_PT * _ui_scale()
 
 
 func _relayout_drops() -> void:
+	## 根据每个产物保存的 serial 重新计算位置，不改变库存顺序。
 	var drop_size: Vector2 = _drop_size()
 	for child in get_children():
 		var item: TextureRect = child as TextureRect
@@ -1053,6 +1132,7 @@ func _relayout_drops() -> void:
 
 
 func _relayout_helpers() -> void:
+	## 尺寸变化时保持帮手相对工作区域位置并重新限制边界。
 	var helper_index: int = 0
 	for child in get_children():
 		var helper: TextureRect = child as TextureRect
@@ -1065,14 +1145,17 @@ func _relayout_helpers() -> void:
 
 
 func _ui_scale() -> float:
+	## 使用当前视口宽度计算场景节点逻辑缩放。
 	return _ui_scale_from_viewport(get_viewport_rect().size)
 
 
 func _ui_scale_from_viewport(viewport_size: Vector2) -> float:
+	## 纯函数版本的缩放计算，供布局入口使用。
 	return maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
 
 
 func _inventory_counter_style(scale: float) -> StyleBoxFlat:
+	## 生成右上角库存计数器样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0.12, 0.15, 0.17, 0.84)
 	style.border_color = Color(0.94, 0.76, 0.32, 0.95)
@@ -1084,11 +1167,13 @@ func _inventory_counter_style(scale: float) -> StyleBoxFlat:
 
 
 func _free_control(control: Control) -> void:
+	## 安全释放一个可能已经排队删除的 UI 节点。
 	if is_instance_valid(control):
 		control.queue_free()
 
 
 func _free_controls_by_instance_id(instance_ids: Array[int]) -> void:
+	## 按实例 ID 批量释放过场结束后残留的帮手节点。
 	for instance_id in instance_ids:
 		var control: Control = instance_from_id(instance_id) as Control
 		if is_instance_valid(control):

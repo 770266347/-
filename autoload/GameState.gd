@@ -1,5 +1,9 @@
 extends Node
-## Runtime mutable player state. Persisted by SaveManager.
+## 玩家运行时权威状态。
+##
+## 这里保存会影响进度的最小数据集合，并由 SaveManager 持久化。
+## UI 不应直接改字典；所有资源、解锁、库存和天赋变化都通过公开方法完成，
+## 这样才能统一校验、统计和 EventBus 通知。
 
 const SAVE_VERSION: int = 11
 const BASE_BOTTLE_VALUE: float = 1.0
@@ -14,21 +18,21 @@ var currency: float = 0.0
 var total_earned: float = 0.0
 var current_scene_id: String = "street"
 
-## upgrade_id -> level
+# upgrade_id -> level；一次性解锁通常使用 1，等级升级使用 1..max_level。
 var upgrades: Dictionary = {}
-## scene_id -> true
+# scene_id -> true；未出现在字典中的场景视为未解锁。
 var unlocked_scenes: Dictionary = {}
-## drop_id -> true
+# drop_id -> true；分类累计统计不等同于当前场景库存。
 var unlocked_drops: Dictionary = {}
-## helper_id -> true
+# helper_id -> true；购买和上阵是两个独立状态。
 var purchased_helpers: Dictionary = {}
-## helper_id -> true; missing purchased IDs are benched
+# helper_id -> true；缺少已购买帮手的键时按下阵兼容处理。
 var active_helpers: Dictionary = {}
-## talent_id -> true
+# talent_id -> true；天赋点余额由里程碑减去这些节点的 point_cost 推导。
 var unlocked_talents: Dictionary = {}
-## scene_id -> Array[drop_id]
+# scene_id -> Array[drop_id]；保存后台库存的真实顺序。
 var scene_drop_inventories: Dictionary = {}
-## scene_id -> Array[serial], aligned with scene_drop_inventories
+# scene_id -> Array[serial]；与产物数组一一对应，用于切场景后稳定复原位置。
 var scene_drop_serials: Dictionary = {}
 var next_scene_drop_serial: int = 1
 var defense_highest_unlocked_level: int = 1
@@ -38,6 +42,8 @@ var drop_collection_counts: Dictionary = {}
 
 
 func reset_to_default() -> void:
+    ## 清除所有玩家进度并恢复配置中的默认场景、产物和初始防守关卡。
+    ## 这是内存操作；GM/SaveManager 调用方负责随后保存。
     save_version = SAVE_VERSION
     bottles = 0
     total_bottles = 0
@@ -63,6 +69,7 @@ func reset_to_default() -> void:
 
 
 func add_bottles(amount: int) -> void:
+    ## 更新当前回收物和累计回收物。只有正向增加才推进里程碑。
     if amount == 0:
         return
     bottles = maxi(bottles + amount, 0)
@@ -72,6 +79,7 @@ func add_bottles(amount: int) -> void:
 
 
 func add_currency(amount: float) -> void:
+    ## 修改现金并累计总收入；负数只影响当前现金，不倒扣历史收入。
     if amount == 0.0:
         return
     currency = maxf(currency + amount, 0.0)
@@ -81,6 +89,7 @@ func add_currency(amount: float) -> void:
 
 
 func record_drop_collection(drop_id: String, amount: int) -> void:
+    ## 写入指定产物的终身分类统计，天赋条件和统计弹窗读取此数据。
     if amount <= 0 or ConfigDB.get_drop(drop_id).is_empty():
         return
     var new_amount: int = get_drop_collection_count(drop_id) + amount
@@ -89,18 +98,22 @@ func record_drop_collection(drop_id: String, amount: int) -> void:
 
 
 func get_drop_collection_count(drop_id: String) -> int:
+    ## 返回单类产物的终身收集数量，未知或损坏值按零处理。
     return maxi(0, int(drop_collection_counts.get(drop_id, 0)))
 
 
 func get_drop_collection_counts() -> Dictionary:
+    ## 返回分类统计副本，防止 UI 直接修改权威字典。
     return drop_collection_counts.duplicate()
 
 
 func can_afford(cost: float) -> bool:
+    ## 只判断余额，不产生扣费副作用。
     return currency >= cost
 
 
 func spend_currency(cost: float) -> bool:
+    ## 原子扣费入口；余额不足时保持状态不变。
     if not can_afford(cost):
         return false
     add_currency(-cost)
@@ -108,18 +121,22 @@ func spend_currency(cost: float) -> bool:
 
 
 func get_upgrade_level(upgrade_id) -> int:
+    ## 查询升级等级；不存在的升级按零级处理。
     return int(upgrades.get(upgrade_id, 0))
 
 
 func set_upgrade_level(upgrade_id, level: int) -> void:
+    ## 写入升级等级。合法性由 UpgradeSystem 或读档清洗负责。
     upgrades[upgrade_id] = level
 
 
 func get_bottles_per_collect() -> int:
+    ## 统一返回一次点击/帮手收集的基础数量，预留未来多倍拾取扩展。
     return 1
 
 
 func get_drop_cash_value(base_cash: float) -> float:
+    ## 叠加通用升级与天赋的收益效果；产物配置中的 cash 始终是基础价。
     return base_cash * (
         1.0
         + _upgrade_effect_total(GLOBAL_VALUE_UPGRADE_ID)
@@ -128,6 +145,7 @@ func get_drop_cash_value(base_cash: float) -> float:
 
 
 func get_global_spawn_interval_multiplier() -> float:
+    ## 返回所有场景共用的刷新间隔倍率，并设置最低速度保护。
     return maxf(
         0.3,
         1.0
@@ -137,6 +155,7 @@ func get_global_spawn_interval_multiplier() -> float:
 
 
 func get_global_capacity_bonus() -> int:
+    ## 汇总通用升级与天赋带来的后台库存容量增量。
     return int(round(
         _upgrade_effect_total(GLOBAL_CAPACITY_UPGRADE_ID)
         + get_talent_effect_total("capacity_bonus")
@@ -144,14 +163,17 @@ func get_global_capacity_bonus() -> int:
 
 
 func get_helper_speed_multiplier() -> float:
+    ## 返回帮手移动速度倍率，按帧读取以便天赋点亮后立即生效。
     return 1.0 + get_talent_effect_total("helper_speed_bonus")
 
 
 func get_helper_cooldown_multiplier() -> float:
+    ## 返回帮手收集冷却倍率，并限制过低冷却造成过度刷钱。
     return maxf(0.5, 1.0 - get_talent_effect_total("helper_cooldown_reduction"))
 
 
 func set_current_scene_id(scene_id: String) -> bool:
+    ## 在配置存在且已解锁时切换当前场景，并广播场景变化。
     if ConfigDB.get_scene(scene_id).is_empty():
         return false
     if not is_scene_unlocked(scene_id):
@@ -164,10 +186,12 @@ func set_current_scene_id(scene_id: String) -> bool:
 
 
 func cycle_scene() -> void:
+    ## 兼容旧循环切换入口；新 UI 使用带方向和解锁检查的 offset 接口。
     set_current_scene_id(ConfigDB.get_next_scene_id(current_scene_id))
 
 
 func switch_scene_by_offset(offset: int) -> bool:
+    ## 按配置顺序尝试切换，实际动画由 BottleSpawnArea 负责。
     var scene_id: String = ConfigDB.get_scene_id_at_offset(current_scene_id, offset)
     if scene_id.is_empty():
         return false
@@ -175,15 +199,18 @@ func switch_scene_by_offset(offset: int) -> bool:
 
 
 func can_switch_scene_by_offset(offset: int) -> bool:
+    ## 只做无副作用的场景切换可行性检查。
     var scene_id: String = ConfigDB.get_scene_id_at_offset(current_scene_id, offset)
     return not scene_id.is_empty() and is_scene_unlocked(scene_id)
 
 
 func is_scene_unlocked(scene_id: String) -> bool:
+    ## 查询场景解锁状态。
     return bool(unlocked_scenes.get(scene_id, false))
 
 
 func unlock_scene(scene_id: String) -> bool:
+    ## 解锁场景并同步开放该场景配置的默认产物。
     if scene_id.is_empty() or ConfigDB.get_scene(scene_id).is_empty():
         return false
     if is_scene_unlocked(scene_id):
@@ -196,14 +223,17 @@ func unlock_scene(scene_id: String) -> bool:
 
 
 func get_unlocked_scene_ids() -> Array:
+    ## 返回已解锁场景 ID 列表，顺序不作为 UI 排序依据。
     return unlocked_scenes.keys()
 
 
 func is_drop_unlocked(drop_id: String) -> bool:
+    ## 查询产物是否已进入实际生成池。
     return bool(unlocked_drops.get(drop_id, false))
 
 
 func unlock_drop(drop_id: String) -> bool:
+    ## 开放一个产物并通知生成区域刷新候选池。
     if drop_id.is_empty() or ConfigDB.get_drop(drop_id).is_empty():
         return false
     if is_drop_unlocked(drop_id):
@@ -214,15 +244,18 @@ func unlock_drop(drop_id: String) -> bool:
 
 
 func get_unlocked_drop_ids() -> Array:
+    ## 返回已开放产物 ID 列表副本。
     return unlocked_drops.keys()
 
 
 func get_scene_drop_ids(scene_id: String) -> Array:
+    ## 返回场景后台库存的产物 ID 顺序，不创建任何画面节点。
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     return inventory.duplicate()
 
 
 func get_scene_drop_serial(scene_id: String, index: int) -> int:
+    ## 查询库存项的稳定序列号；缺少旧序列号时补充分配。
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     if index < 0 or index >= inventory.size():
         return 0
@@ -231,16 +264,19 @@ func get_scene_drop_serial(scene_id: String, index: int) -> int:
 
 
 func get_scene_drop_serials(scene_id: String) -> Array:
+    ## 返回整个场景序列号副本，供画面恢复稳定位置。
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     return _ensure_scene_drop_serials(scene_id, inventory.size()).duplicate()
 
 
 func get_scene_drop_count(scene_id: String) -> int:
+    ## 返回后台库存数量，而不是当前画面上渲染的节点数量。
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     return inventory.size()
 
 
 func get_scene_capacity(scene_id: String) -> int:
+    ## 计算场景基础上限加通用升级和天赋容量奖励。
     var scene: Dictionary = ConfigDB.get_scene(scene_id)
     if scene.is_empty():
         return 0
@@ -248,6 +284,7 @@ func get_scene_capacity(scene_id: String) -> int:
 
 
 func add_scene_drop(scene_id: String, drop_id: String) -> bool:
+    ## 将一个已解锁且归属正确的产物追加到后台库存，并分配稳定序列号。
     if not is_scene_unlocked(scene_id) or not is_drop_unlocked(drop_id):
         return false
     var drop: Dictionary = ConfigDB.get_drop(drop_id)
@@ -266,6 +303,7 @@ func add_scene_drop(scene_id: String, drop_id: String) -> bool:
 
 
 func consume_scene_drop(scene_id: String, drop_id: String) -> bool:
+    ## 按产物 ID 消耗一项，供不关心实例序列号的旧入口使用。
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     var index: int = inventory.find(drop_id)
     if index < 0:
@@ -274,6 +312,7 @@ func consume_scene_drop(scene_id: String, drop_id: String) -> bool:
 
 
 func consume_scene_drop_instance(scene_id: String, serial: int, expected_drop_id: String = "") -> bool:
+    ## 按稳定序列号消耗指定实例，避免相邻产物或切场景后误收集。
     if serial <= 0:
         return false
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
@@ -287,6 +326,7 @@ func consume_scene_drop_instance(scene_id: String, serial: int, expected_drop_id
 
 
 func _consume_scene_drop_at(scene_id: String, index: int) -> bool:
+    ## 同步删除产物和对应序列号，保证两个数组始终对齐。
     var inventory: Array = scene_drop_inventories.get(scene_id, [])
     if index < 0 or index >= inventory.size():
         return false
@@ -304,14 +344,17 @@ func _consume_scene_drop_at(scene_id: String, index: int) -> bool:
 
 
 func has_helper(helper_id: String) -> bool:
+    ## 查询帮手是否已购买。
     return bool(purchased_helpers.get(helper_id, false))
 
 
 func is_helper_active(helper_id: String) -> bool:
+    ## 只有已购买且 active_helpers 中存在时才算上阵。
     return has_helper(helper_id) and bool(active_helpers.get(helper_id, false))
 
 
 func purchase_helper(helper_id: String) -> bool:
+    ## 标记帮手已购买，并按产品规则默认上阵。
     if helper_id.is_empty() or ConfigDB.get_helper(helper_id).is_empty():
         return false
     if has_helper(helper_id):
@@ -323,6 +366,7 @@ func purchase_helper(helper_id: String) -> bool:
 
 
 func set_helper_active(helper_id: String, active: bool) -> bool:
+    ## 切换帮手上阵状态；场景过场禁用由 UI 层控制。
     if not has_helper(helper_id):
         return false
     if is_helper_active(helper_id) == active:
@@ -336,10 +380,12 @@ func set_helper_active(helper_id: String, active: bool) -> bool:
 
 
 func is_talent_unlocked(talent_id: String) -> bool:
+    ## 查询天赋节点是否已点亮。
     return bool(unlocked_talents.get(talent_id, false))
 
 
 func unlock_talent(talent_id: String) -> bool:
+    ## 写入天赋点亮状态并广播；前置、条件和点数校验由 TalentSystem 完成。
     if talent_id.is_empty() or ConfigDB.get_talent(talent_id).is_empty():
         return false
     if is_talent_unlocked(talent_id):
@@ -350,6 +396,7 @@ func unlock_talent(talent_id: String) -> bool:
 
 
 func reset_talents() -> bool:
+    ## 清空天赋节点但保留累计回收数据，调用方可立即保存。
     if unlocked_talents.is_empty():
         return false
     unlocked_talents.clear()
@@ -358,6 +405,7 @@ func reset_talents() -> bool:
 
 
 func get_talent_points_earned() -> int:
+    ## 统计已达到的回收里程碑数量，零件里程碑也计入但不消耗现金。
     var earned: int = 0
     for milestone in ConfigDB.get_talent_point_milestones():
         if total_bottles < int(milestone):
@@ -367,6 +415,7 @@ func get_talent_points_earned() -> int:
 
 
 func get_talent_points_spent() -> int:
+    ## 按节点配置的 point_cost 汇总已使用点数，而不是简单统计字典长度。
     var spent: int = 0
     for talent_id in unlocked_talents.keys():
         var row: Dictionary = ConfigDB.get_talent(String(talent_id))
@@ -375,10 +424,12 @@ func get_talent_points_spent() -> int:
 
 
 func get_available_talent_points() -> int:
+    ## 返回可用点数，并防止异常存档产生负余额。
     return maxi(0, get_talent_points_earned() - get_talent_points_spent())
 
 
 func get_next_talent_point_milestone() -> int:
+    ## 返回下一个未达到的累计回收门槛，全部完成时返回 -1。
     for milestone in ConfigDB.get_talent_point_milestones():
         if total_bottles < int(milestone):
             return int(milestone)
@@ -386,6 +437,7 @@ func get_next_talent_point_milestone() -> int:
 
 
 func get_talent_effect_total(effect_id: String) -> float:
+    ## 汇总所有已点亮节点中同名 effects 字段，供各玩法入口读取。
     var total: float = 0.0
     for talent_id in unlocked_talents.keys():
         var row: Dictionary = ConfigDB.get_talent(String(talent_id))
@@ -395,14 +447,17 @@ func get_talent_effect_total(effect_id: String) -> float:
 
 
 func is_defense_level_unlocked(level_id: int) -> bool:
+    ## 关卡必须同时满足玩家进度和配置上限。
     return level_id >= 1 and level_id <= defense_highest_unlocked_level and level_id <= ConfigDB.get_defense_max_level()
 
 
 func is_defense_level_cleared(level_id: int) -> bool:
+    ## 查询关卡是否曾经首次通关。
     return bool(defense_cleared_levels.get(level_id, false))
 
 
 func complete_defense_level(level_id: int) -> bool:
+    ## 记录首次通关并解锁下一关；重复通关不重复推进进度。
     if not is_defense_level_unlocked(level_id) or ConfigDB.get_defense_level(level_id).is_empty():
         return false
     var first_clear: bool = not is_defense_level_cleared(level_id)
@@ -415,6 +470,7 @@ func complete_defense_level(level_id: int) -> bool:
 
 
 func to_dict() -> Dictionary:
+    ## 生成完整存档快照；SaveManager 会在序列化前覆盖版本号。
     return {
         "save_version": save_version,
         "bottles": bottles,
@@ -438,6 +494,7 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(d: Dictionary) -> void:
+    ## 读取旧/新存档，填充默认字段，再按配置清洗所有外部数据。
     save_version = int(d.get("save_version", SAVE_VERSION))
     bottles = int(d.get("bottles", 0))
     total_bottles = int(d.get("total_bottles", bottles))
@@ -479,6 +536,7 @@ func from_dict(d: Dictionary) -> void:
 
 
 static func _mixed_key_level_dict(d: Dictionary) -> Dictionary:
+    ## 将旧存档中可能被 JSON 转成字符串的数字键恢复为整数键。
     var out: Dictionary = {}
     for k in d.keys():
         var key_variant = k
@@ -489,6 +547,7 @@ static func _mixed_key_level_dict(d: Dictionary) -> Dictionary:
 
 
 static func _bool_key_dict(d: Dictionary) -> Dictionary:
+    ## 将任意字典键统一为字符串并转换为布尔值。
     var out: Dictionary = {}
     for k in d.keys():
         out[String(k)] = bool(d[k])
@@ -496,6 +555,7 @@ static func _bool_key_dict(d: Dictionary) -> Dictionary:
 
 
 static func _int_bool_key_dict(d: Dictionary) -> Dictionary:
+    ## 清洗防守关卡完成表，只保留正整数且值为真的记录。
     var out: Dictionary = {}
     for k in d.keys():
         var level_id: int = int(k)
@@ -505,6 +565,7 @@ static func _int_bool_key_dict(d: Dictionary) -> Dictionary:
 
 
 static func _string_int_count_dict(value: Variant) -> Dictionary:
+    ## 清洗终身数量表，过滤负数、零值和非字典输入。
     var out: Dictionary = {}
     if typeof(value) != TYPE_DICTIONARY:
         return out
@@ -561,12 +622,14 @@ static func _scene_drop_serial_dict(value: Variant) -> Dictionary:
 
 
 func _allocate_scene_drop_serial() -> int:
+    ## 分配全局递增序列号；序列号只用于稳定身份，不代表产物价值。
     var serial: int = maxi(1, next_scene_drop_serial)
     next_scene_drop_serial = serial + 1
     return serial
 
 
 func _ensure_scene_drop_serials(scene_id: String, inventory_count: int) -> Array:
+    ## 兼容旧存档缺少序列号的库存，并修剪多余序列号。
     var serials: Array = scene_drop_serials.get(scene_id, [])
     if serials.size() > inventory_count:
         serials.resize(inventory_count)
@@ -580,16 +643,19 @@ func _ensure_scene_drop_serials(scene_id: String, inventory_count: int) -> Array
 
 
 func _merge_default_unlocked_scenes() -> void:
+    ## 读档后补回配置要求的默认场景，防止旧存档阻塞新版本入口。
     for scene_id in ConfigDB.get_default_unlocked_scenes():
         unlocked_scenes[String(scene_id)] = true
 
 
 func _merge_default_unlocked_drops() -> void:
+    ## 读档后补回配置要求的默认产物。
     for drop_id in ConfigDB.get_default_unlocked_drops():
         unlocked_drops[String(drop_id)] = true
 
 
 func _apply_unlock_upgrades_to_state() -> void:
+    ## 根据历史升级记录重建场景和产物解锁，兼容早期存档字段。
     if int(upgrades.get("unlock_bar_beer", 0)) > 0 and int(upgrades.get("unlock_bar_scene", 0)) <= 0:
         upgrades["unlock_bar_scene"] = 1
 
@@ -615,6 +681,7 @@ func _apply_unlock_upgrades_to_state() -> void:
 
 
 func _sanitize_scene_drop_inventories() -> void:
+    ## 清除无效场景、未解锁产物和超出容量的库存，同时保持序列号对齐。
     var sanitized: Dictionary = {}
     var sanitized_serials: Dictionary = {}
     var used_serials: Dictionary = {}
@@ -654,6 +721,7 @@ func _sanitize_scene_drop_inventories() -> void:
 
 
 func _sanitize_active_helpers() -> void:
+    ## 只保留已购买且仍存在配置的上阵帮手。
     var sanitized: Dictionary = {}
     for helper_id_variant in active_helpers.keys():
         var helper_id: String = String(helper_id_variant)
@@ -663,6 +731,7 @@ func _sanitize_active_helpers() -> void:
 
 
 func _sanitize_unlocked_talents() -> void:
+    ## 只保留有效节点，并按配置顺序过滤未满足前置的孤立节点。
     var sanitized: Dictionary = {}
     for row in ConfigDB.get_talents():
         var talent_id: String = String(row.get("id", ""))
@@ -679,6 +748,7 @@ func _sanitize_unlocked_talents() -> void:
 
 
 func _sanitize_defense_progress() -> void:
+    ## 将防守进度限制在当前配置的最大关卡范围内。
     var max_level: int = maxi(1, ConfigDB.get_defense_max_level())
     defense_highest_unlocked_level = clampi(defense_highest_unlocked_level, 1, max_level)
     var sanitized: Dictionary = {}
@@ -691,6 +761,7 @@ func _sanitize_defense_progress() -> void:
 
 
 func _sanitize_drop_collection_counts() -> void:
+    ## 删除不存在产物的分类统计，防止配置删除后天赋条件卡死。
     var sanitized: Dictionary = {}
     for drop_id_variant in drop_collection_counts.keys():
         var drop_id: String = String(drop_id_variant)
@@ -701,6 +772,7 @@ func _sanitize_drop_collection_counts() -> void:
 
 
 func _sanitize_upgrade_levels() -> void:
+    ## 将旧版本升级等级限制到新配置上限，并过滤未知升级 ID。
     var sanitized: Dictionary = {}
     for upgrade_id in upgrades.keys():
         var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
@@ -717,6 +789,7 @@ func _sanitize_upgrade_levels() -> void:
 
 
 func _upgrade_effect_total(upgrade_id: String) -> float:
+    ## 按当前配置效果值计算升级总效果，并再次限制读取到的等级。
     var row: Dictionary = ConfigDB.get_upgrade(upgrade_id)
     var level: int = clampi(get_upgrade_level(upgrade_id), 0, int(row.get("max_level", 0)))
     return float(level) * float(row.get("effect_per_level", 0.0))

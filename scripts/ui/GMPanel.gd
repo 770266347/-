@@ -1,5 +1,8 @@
 extends Control
-## Debug-only currency controls. Toggle with F1.
+## 调试专用 GM 面板，仅在 debug 构建中存在。
+##
+## 面板可以增加现金或在二次确认后删除完整存档，所有操作都立即调用
+## SaveManager 保存，避免测试者误以为重启后仍会保留临时数据。
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 
@@ -19,6 +22,7 @@ var reset_confirmation: ConfirmationDialog
 
 
 func _ready() -> void:
+    ## 非 debug 构建直接释放自身，防止 GM 入口进入发行包。
 	if not OS.is_debug_build():
 		queue_free()
 		return
@@ -33,6 +37,7 @@ func _ready() -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+    ## 使用未处理输入接收 F1/Esc，避免底部按钮或游戏场景抢走快捷键。
 	var key_event: InputEventKey = event as InputEventKey
 	if key_event == null or not key_event.pressed or key_event.echo:
 		return
@@ -46,6 +51,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _build() -> void:
+    ## 创建遮罩、现金输入、快捷金额和危险重置按钮。
 	overlay = ColorRect.new()
 	overlay.anchor_right = 1.0
 	overlay.anchor_bottom = 1.0
@@ -137,6 +143,7 @@ func _build() -> void:
 
 
 func _set_open(is_open: bool) -> void:
+    ## 打开时刷新现金并聚焦输入框，关闭时同时隐藏确认弹窗。
 	visible = is_open
 	if not is_open:
 		if reset_confirmation != null:
@@ -149,10 +156,12 @@ func _set_open(is_open: bool) -> void:
 
 
 func _on_add_custom_pressed() -> void:
+    ## 将 SpinBox 当前值转交给统一加钱入口。
 	_add_money(float(amount_input.value))
 
 
 func _add_money(amount: float) -> void:
+    ## GM 加钱仍走 GameState.add_currency，确保 HUD 和存档事件一致。
 	if amount <= 0.0:
 		status_label.text = "金额必须大于 0"
 		return
@@ -163,6 +172,7 @@ func _add_money(amount: float) -> void:
 
 
 func _on_reset_requested() -> void:
+    ## 只弹确认框，不在用户确认前触碰任何存档或内存状态。
 	if reset_confirmation == null:
 		return
 	var scale: float = maxf(1.0, get_viewport_rect().size.x / BASE_LOGICAL_WIDTH)
@@ -170,6 +180,7 @@ func _on_reset_requested() -> void:
 
 
 func _reset_all_data() -> void:
+    ## 删除持久化文件、恢复默认状态并写入一份全新存档。
 	SaveManager.delete_save()
 	GameState.reset_to_default()
 	SaveManager.save_game()
@@ -179,11 +190,13 @@ func _reset_all_data() -> void:
 
 
 func _refresh_cash() -> void:
+    ## 使用 BigNumber 保持 GM 显示与正式资源栏一致。
 	if cash_label != null:
 		cash_label.text = "当前现金：%s 元" % BigNumber.format(GameState.currency)
 
 
 func _focus_amount_input() -> void:
+    ## 聚焦并全选输入内容，便于连续修改测试金额。
 	if amount_input == null:
 		return
 	var line_edit: LineEdit = amount_input.get_line_edit()
@@ -192,15 +205,18 @@ func _focus_amount_input() -> void:
 
 
 func _on_currency_changed(_new_amount: float, _delta: float) -> void:
+    ## 面板打开时才刷新，关闭状态不做无意义的 UI 工作。
 	if visible:
 		_refresh_cash()
 
 
 func _on_viewport_size_changed() -> void:
+    ## 窗口变化时重新计算调试面板的中心位置与字体尺寸。
 	apply_layout(get_viewport_rect().size)
 
 
 func apply_layout(viewport_size: Vector2) -> void:
+    ## GM 面板使用独立的较大尺寸，方便调试时读取小字和输入金额。
 	if panel == null:
 		return
 	var scale: float = maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
@@ -236,6 +252,7 @@ func apply_layout(viewport_size: Vector2) -> void:
 
 
 func _panel_style(scale: float) -> StyleBoxFlat:
+    ## 生成可复用的浅色调试面板样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0.96, 0.97, 0.94, 0.99)
 	style.border_color = Color(0.24, 0.3, 0.28, 1.0)

@@ -1,6 +1,12 @@
 class_name DefenseMode
 extends Control
-## Freeform street-defense mode unlocked after all collection scenes.
+## 街区防守玩法主控制器。
+##
+## 负责关卡选择、波次队列、顶部/左右出怪、敌人移动、帮手圆形攻击、
+## 胜负结算和拖放阵容。DefenseSlot/Card 只负责 UI 拖放，所有战斗权威状态
+## （敌人节点、生命、冷却、关卡进度）集中在此脚本。
+
+# 战斗区域采用自由坐标，敌人不绑定五条道路；三个方向共享出怪权重。
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 const DEFENSE_SLOT_COUNT: int = 5
@@ -60,6 +66,7 @@ var _last_layout_scale: float = 0.0
 
 
 func _ready() -> void:
+	## 创建防守 UI，订阅关卡完成事件，并保持模式初始关闭。
 	z_index = 50
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_rng.randomize()
@@ -70,6 +77,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	## 仅在模式打开且战斗进行中推进出怪、敌人移动和帮手攻击。
 	if not _active or not _battle_started or _battle_over:
 		return
 	_update_enemy_spawning(delta)
@@ -79,6 +87,7 @@ func _process(delta: float) -> void:
 
 
 func _build() -> void:
+	## 组装背景、出怪口、顶部状态、帮手栏、结果层和关卡选择层。
 	background = TextureRect.new()
 	background.texture = load("res://assets/street_pickup_bg_clean.png") as Texture2D
 	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -116,6 +125,7 @@ func _build() -> void:
 
 
 func _make_spawn_portal(direction_text: String) -> Panel:
+	## 创建只做视觉提示的出怪口，实际出生位置由配置和随机源决定。
 	var portal: Panel = Panel.new()
 	portal.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	portal.z_index = 12
@@ -131,6 +141,7 @@ func _make_spawn_portal(direction_text: String) -> Panel:
 
 
 func _build_top_band() -> void:
+	## 创建关卡标题、波次、耐久和剩余敌人等战斗摘要。
 	top_panel = PanelContainer.new()
 	top_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(top_panel)
@@ -165,6 +176,7 @@ func _build_top_band() -> void:
 
 
 func _build_roster_panel() -> void:
+	## 创建可拖动帮手卡片和五个防守格子容器。
 	roster_panel = PanelContainer.new()
 	roster_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(roster_panel)
@@ -196,6 +208,7 @@ func _build_roster_panel() -> void:
 
 
 func _build_result_panel() -> void:
+	## 创建胜利/失败共用结果面板，按钮行为由当前结果状态决定。
 	result_panel = PanelContainer.new()
 	result_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	result_panel.visible = false
@@ -223,6 +236,7 @@ func _build_result_panel() -> void:
 
 
 func _build_level_select_panel() -> void:
+	## 根据 ConfigDB 关卡表建立可解锁关卡按钮。
 	level_select_panel = PanelContainer.new()
 	level_select_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	level_select_panel.z_index = 90
@@ -256,6 +270,7 @@ func _build_level_select_panel() -> void:
 
 
 func open_mode() -> void:
+	## 打开模式并显示关卡选择；尚未开始战斗时不生成敌人。
 	visible = true
 	_active = true
 	_refresh_roster()
@@ -265,6 +280,7 @@ func open_mode() -> void:
 
 
 func close_mode() -> void:
+	## 退出模式并清理敌人、攻击闪光和当前阵容运行节点。
 	_active = false
 	_battle_started = false
 	set_process(false)
@@ -273,6 +289,7 @@ func close_mode() -> void:
 
 
 func _reset_battle() -> void:
+	## 清空单局战斗状态，不影响玩家永久关卡通关记录。
 	if _current_level.is_empty():
 		_show_level_selection()
 		return
@@ -296,6 +313,7 @@ func _reset_battle() -> void:
 
 
 func _show_level_selection() -> void:
+	## 显示关卡选择并隐藏战斗中的临时节点。
 	_clear_combat_nodes()
 	_battle_started = false
 	_battle_over = false
@@ -311,6 +329,7 @@ func _show_level_selection() -> void:
 
 
 func _refresh_level_buttons() -> void:
+	## 按最高解锁关卡和 cleared 状态刷新按钮。
 	var scale: float = _ui_scale(get_viewport_rect().size)
 	for level_id_variant in level_buttons.keys():
 		var level_id: int = int(level_id_variant)
@@ -325,6 +344,7 @@ func _refresh_level_buttons() -> void:
 
 
 func _start_level(level_id: int) -> void:
+	## 读取关卡波次、耐久和敌人配置，初始化一局战斗。
 	if not GameState.is_defense_level_unlocked(level_id):
 		return
 	var row: Dictionary = ConfigDB.get_defense_level(level_id)
@@ -336,6 +356,7 @@ func _start_level(level_id: int) -> void:
 
 
 func _build_spawn_queue(level: Dictionary) -> Array:
+	## 将关卡波次展开成按时间顺序出现的敌人 ID 队列。
 	var queue: Array = []
 	var waves: Array = level.get("waves", [])
 	var wave_gap: float = float(level.get("wave_gap", 2.0))
@@ -358,6 +379,7 @@ func _build_spawn_queue(level: Dictionary) -> Array:
 
 
 func _refresh_roster() -> void:
+	## 只展示已购买帮手；已部署帮手从卡片栏移到对应格子状态。
 	for child in roster_row.get_children():
 		child.queue_free()
 	var scale: float = _ui_scale(get_viewport_rect().size)
@@ -382,6 +404,7 @@ func _refresh_roster() -> void:
 
 
 func _rebuild_slots(scale: float) -> void:
+	## 重新创建固定数量的防守格子，保证布局尺寸稳定。
 	for child in slot_row.get_children():
 		child.queue_free()
 	slots.clear()
@@ -405,6 +428,7 @@ func _rebuild_slots(scale: float) -> void:
 
 
 func _on_helper_dropped(slot_index: int, helper_id: String) -> void:
+	## 校验拖放帮手并处理换位或覆盖旧格子的规则。
 	if not _active or not GameState.has_helper(helper_id):
 		return
 	for existing_slot_variant in _assigned_helpers.keys():
@@ -422,6 +446,7 @@ func _on_helper_dropped(slot_index: int, helper_id: String) -> void:
 
 
 func _update_enemy_spawning(delta: float) -> void:
+	## 按波次队列时间生成敌人，全部生成后停止出怪。
 	if _spawn_index >= _spawn_queue.size():
 		return
 	_spawn_timer -= delta
@@ -437,6 +462,7 @@ func _update_enemy_spawning(delta: float) -> void:
 
 
 func _spawn_enemy(enemy_id: String) -> void:
+	## 创建敌人节点并写入生命、速度、出生方向和目标位置元数据。
 	var enemy_row: Dictionary = ConfigDB.get_defense_enemy(enemy_id)
 	if enemy_row.is_empty():
 		return
@@ -491,6 +517,7 @@ func _spawn_enemy(enemy_id: String) -> void:
 
 
 func _pick_spawn_source() -> String:
+	## 按 top/left/right 配置权重随机选择出怪口。
 	var weights: Dictionary = ConfigDB.get_defense_spawn_weights()
 	var top_weight: float = maxf(0.0, float(weights.get(SPAWN_TOP, 60.0)))
 	var left_weight: float = maxf(0.0, float(weights.get(SPAWN_LEFT, 20.0)))
@@ -507,6 +534,7 @@ func _pick_spawn_source() -> String:
 
 
 func _enemy_spawn_position(source: String, enemy_size: Vector2) -> Vector2:
+	## 在选定出怪口附近生成随机位置，避免敌人排成固定道路。
 	var viewport_size: Vector2 = get_viewport_rect().size
 	var scale: float = _ui_scale(viewport_size)
 	var margin: float = 16.0 * scale
@@ -521,6 +549,7 @@ func _enemy_spawn_position(source: String, enemy_size: Vector2) -> Vector2:
 
 
 func _random_defense_target() -> Vector2:
+	## 为敌人生成向下移动的自由目标点，保持出怪路线混乱。
 	var viewport_size: Vector2 = get_viewport_rect().size
 	var scale: float = _ui_scale(viewport_size)
 	var margin: float = 20.0 * scale
@@ -528,6 +557,7 @@ func _random_defense_target() -> Vector2:
 
 
 func _update_enemies(delta: float) -> void:
+	## 推进敌人到目标；抵达防线后减少基地耐久并移除敌人。
 	var scale: float = _ui_scale(get_viewport_rect().size)
 	for child in combat_layer.get_children():
 		var enemy: TextureRect = child as TextureRect
@@ -553,6 +583,7 @@ func _update_enemies(delta: float) -> void:
 
 
 func _update_helpers(delta: float) -> void:
+	## 按部署格处理攻击冷却，并查找攻击范围内最近敌人。
 	for slot_index in range(DEFENSE_SLOT_COUNT):
 		var helper_id: String = String(_assigned_helpers.get(slot_index, ""))
 		if helper_id.is_empty() or not GameState.has_helper(helper_id):
@@ -572,6 +603,7 @@ func _update_helpers(delta: float) -> void:
 
 
 func _nearest_enemy_in_range(slot_index: int, helper_row: Dictionary) -> TextureRect:
+	## 使用 defense_range 做圆形距离判定，返回范围内最近目标。
 	var target: TextureRect = null
 	var smallest_distance_to_defense: float = INF
 	var helper_center: Vector2 = _helper_defense_center(slot_index)
@@ -594,6 +626,7 @@ func _nearest_enemy_in_range(slot_index: int, helper_row: Dictionary) -> Texture
 
 
 func _damage_enemy(enemy: TextureRect, damage: float) -> void:
+	## 扣除敌人生命，并在归零时发放击杀反馈和移除节点。
 	if enemy == null or not is_instance_valid(enemy) or bool(enemy.get_meta("defeated", false)):
 		return
 	var hp: float = maxf(0.0, float(enemy.get_meta("hp", 0.0)) - damage)
@@ -614,6 +647,7 @@ func _damage_enemy(enemy: TextureRect, damage: float) -> void:
 
 
 func _spawn_attack_flash(slot_index: int, target: TextureRect) -> void:
+	## 绘制一次性攻击反馈，不参与命中计算。
 	if target == null or not is_instance_valid(target):
 		return
 	var scale: float = _ui_scale(get_viewport_rect().size)
@@ -632,12 +666,14 @@ func _spawn_attack_flash(slot_index: int, target: TextureRect) -> void:
 
 
 func _check_level_completion() -> void:
+	## 确认所有敌人清除且所有波次已生成，避免提前胜利。
 	if _battle_over or _spawn_index < _spawn_queue.size() or _enemy_count() > 0:
 		return
 	_end_battle(true)
 
 
 func _end_battle(victory: bool) -> void:
+	## 结束单局并停止临时逻辑；胜利时推进永久关卡解锁。
 	_battle_over = true
 	_battle_started = false
 	_result_was_victory = victory
@@ -653,6 +689,7 @@ func _end_battle(victory: bool) -> void:
 
 
 func _on_result_primary_pressed() -> void:
+	## 结果按钮根据胜负返回关卡选择或关闭防守模式。
 	if _result_was_victory and _current_level_id < ConfigDB.get_defense_max_level():
 		_start_level(_current_level_id + 1)
 	else:
@@ -660,6 +697,7 @@ func _on_result_primary_pressed() -> void:
 
 
 func _clear_combat_nodes() -> void:
+	## 清理单局敌人和临时特效，不清理帮手购买状态。
 	if combat_layer == null:
 		return
 	for child in combat_layer.get_children():
@@ -667,6 +705,7 @@ func _clear_combat_nodes() -> void:
 
 
 func _enemy_count() -> int:
+	## 返回当前场上敌人节点数量，用于顶部状态和胜负判断。
 	var count: int = 0
 	for child in combat_layer.get_children():
 		if not child.is_queued_for_deletion() and bool(child.get_meta("is_defense_enemy", false)) and not bool(child.get_meta("defeated", false)):
@@ -675,6 +714,7 @@ func _enemy_count() -> int:
 
 
 func _refresh_status() -> void:
+	## 将单局状态同步到顶部标题和波次摘要。
 	if status_label == null:
 		return
 	var max_hp: int = int(_current_level.get("base_hp", BASE_MAX_HP))
@@ -685,11 +725,13 @@ func _refresh_status() -> void:
 
 
 func _refresh_deployed_label() -> void:
+	## 显示已部署帮手数量和格子总数。
 	if deployed_label != null:
 		deployed_label.text = "布阵 %d/%d" % [_assigned_helpers.size(), DEFENSE_SLOT_COUNT]
 
 
 func apply_layout(viewport_size: Vector2) -> void:
+	## 布局全屏战斗区域、三处出怪口、帮手栏和结果弹窗。
 	if background == null:
 		return
 	var scale: float = _ui_scale(viewport_size)
@@ -779,12 +821,14 @@ func apply_layout(viewport_size: Vector2) -> void:
 
 
 func _portal_center(portal: Control) -> Vector2:
+	## 将出怪口控件坐标转换为战斗区域中心坐标。
 	if portal == null:
 		return Vector2.ZERO
 	return portal.position + portal.size * 0.5
 
 
 func _helper_defense_center(slot_index: int) -> Vector2:
+	## 返回防守格中心，攻击范围圆和攻击起点共用此位置。
 	if slot_index >= 0 and slot_index < slots.size():
 		var slot: DefenseSlot = slots[slot_index]
 		if slot != null and is_instance_valid(slot) and not slot.is_queued_for_deletion() and slot.size.x > 0.0:
@@ -800,6 +844,7 @@ func _helper_defense_center(slot_index: int) -> Vector2:
 
 
 func _refresh_attack_ranges() -> void:
+	## 为所有已部署帮手提交当前攻击圆快照给绘制层。
 	if range_layer == null:
 		return
 	var scale: float = _ui_scale(get_viewport_rect().size)
@@ -819,21 +864,25 @@ func _refresh_attack_ranges() -> void:
 
 
 func _defense_line_y() -> float:
+	## 计算敌人抵达后扣除耐久的防线 Y 坐标。
 	var scale: float = _ui_scale(get_viewport_rect().size)
 	return get_viewport_rect().size.y - ROSTER_HEIGHT_PT * scale - SLOT_HEIGHT_PT * scale - 14.0 * scale
 
 
 func _free_instance_by_id(instance_id: int) -> void:
+	## 按实例 ID 安全释放临时战斗节点。
 	var node: Node = instance_from_id(instance_id) as Node
 	if is_instance_valid(node):
 		node.queue_free()
 
 
 func _ui_scale(viewport_size: Vector2) -> float:
+	## 以 iPhone 16 逻辑宽度计算防守 UI 缩放。
 	return maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
 
 
 func _round_style(bg: Color, border: Color, border_width: float, radius: float, scale: float) -> StyleBoxFlat:
+	## 生成防守面板、格子和按钮共用的圆角样式。
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = bg
 	style.border_color = border
@@ -847,6 +896,7 @@ func _round_style(bg: Color, border: Color, border_width: float, radius: float, 
 
 
 func _style_level_button(button: Button, cleared: bool, scale: float) -> void:
+	## 根据关卡是否已通关设置按钮颜色和文字尺寸。
 	var normal_color: Color = Color(0.25, 0.45, 0.31, 0.98) if cleared else Color(0.45, 0.35, 0.18, 0.98)
 	button.add_theme_color_override("font_color", Color(1.0, 0.96, 0.78, 1.0))
 	button.add_theme_color_override("font_disabled_color", Color(0.58, 0.6, 0.61, 1.0))
