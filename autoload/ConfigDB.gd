@@ -10,6 +10,9 @@ var helpers_by_id: Dictionary = {}
 var scenes: Array = []
 var scenes_by_id: Dictionary = {}
 var drops_by_id: Dictionary = {}
+var talents: Array = []
+var talents_by_id: Dictionary = {}
+var talent_point_milestones: Array = []
 var default_scene_id: String = "street"
 var defense_levels: Array = []
 var defense_levels_by_id: Dictionary = {}
@@ -23,6 +26,7 @@ func _ready() -> void:
     _load_upgrades()
     _load_helpers()
     _load_scenes()
+    _load_talents()
     _load_defense_levels()
     print("[ConfigDB] loaded in %d ms" % (Time.get_ticks_msec() - t0))
 
@@ -89,6 +93,24 @@ func _load_scenes() -> void:
                 continue
             drop["scene_id"] = id
             drops_by_id[drop_id] = drop
+
+
+func _load_talents() -> void:
+    var data = _read_json(DATA_DIR + "talents.json")
+    talents.clear()
+    talents_by_id.clear()
+    talent_point_milestones.clear()
+    if data == null:
+        return
+    for milestone in data.get("point_milestones", []):
+        talent_point_milestones.append(maxi(0, int(milestone)))
+    talent_point_milestones.sort()
+    for row in data.get("talents", []):
+        var id: String = String(row.get("id", ""))
+        if id.is_empty():
+            continue
+        talents.append(row)
+        talents_by_id[id] = row
 
 
 func _load_defense_levels() -> void:
@@ -214,6 +236,18 @@ func get_drop(drop_id: String) -> Dictionary:
 
 func get_drop_name(drop_id: String) -> String:
     return String(get_drop(drop_id).get("name", drop_id))
+
+
+func get_talents() -> Array:
+    return talents
+
+
+func get_talent(talent_id: String) -> Dictionary:
+    return talents_by_id.get(talent_id, {})
+
+
+func get_talent_point_milestones() -> Array:
+    return talent_point_milestones.duplicate()
 
 
 func get_default_unlocked_drops() -> Array:

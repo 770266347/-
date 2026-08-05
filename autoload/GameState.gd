@@ -1,7 +1,7 @@
 extends Node
 ## Runtime mutable player state. Persisted by SaveManager.
 
-const SAVE_VERSION: int = 10
+const SAVE_VERSION: int = 11
 const BASE_BOTTLE_VALUE: float = 1.0
 const GLOBAL_VALUE_UPGRADE_ID: String = "upgrade_global_value"
 const GLOBAL_SPAWN_UPGRADE_ID: String = "upgrade_global_spawn"
@@ -24,6 +24,8 @@ var unlocked_drops: Dictionary = {}
 var purchased_helpers: Dictionary = {}
 ## helper_id -> true; missing purchased IDs are benched
 var active_helpers: Dictionary = {}
+## talent_id -> true
+var unlocked_talents: Dictionary = {}
 ## scene_id -> Array[drop_id]
 var scene_drop_inventories: Dictionary = {}
 ## scene_id -> Array[serial], aligned with scene_drop_inventories
@@ -47,6 +49,7 @@ func reset_to_default() -> void:
     unlocked_drops = _drop_set(ConfigDB.get_default_unlocked_drops())
     purchased_helpers.clear()
     active_helpers.clear()
+    unlocked_talents.clear()
     scene_drop_inventories.clear()
     scene_drop_serials.clear()
     next_scene_drop_serial = 1
@@ -117,15 +120,35 @@ func get_bottles_per_collect() -> int:
 
 
 func get_drop_cash_value(base_cash: float) -> float:
-    return base_cash * (1.0 + _upgrade_effect_total(GLOBAL_VALUE_UPGRADE_ID))
+    return base_cash * (
+        1.0
+        + _upgrade_effect_total(GLOBAL_VALUE_UPGRADE_ID)
+        + get_talent_effect_total("cash_bonus")
+    )
 
 
 func get_global_spawn_interval_multiplier() -> float:
-    return maxf(0.4, 1.0 - _upgrade_effect_total(GLOBAL_SPAWN_UPGRADE_ID))
+    return maxf(
+        0.3,
+        1.0
+        - _upgrade_effect_total(GLOBAL_SPAWN_UPGRADE_ID)
+        - get_talent_effect_total("spawn_reduction")
+    )
 
 
 func get_global_capacity_bonus() -> int:
-    return int(round(_upgrade_effect_total(GLOBAL_CAPACITY_UPGRADE_ID)))
+    return int(round(
+        _upgrade_effect_total(GLOBAL_CAPACITY_UPGRADE_ID)
+        + get_talent_effect_total("capacity_bonus")
+    ))
+
+
+func get_helper_speed_multiplier() -> float:
+    return 1.0 + get_talent_effect_total("helper_speed_bonus")
+
+
+func get_helper_cooldown_multiplier() -> float:
+    return maxf(0.5, 1.0 - get_talent_effect_total("helper_cooldown_reduction"))
 
 
 func set_current_scene_id(scene_id: String) -> bool:
@@ -312,6 +335,65 @@ func set_helper_active(helper_id: String, active: bool) -> bool:
     return true
 
 
+func is_talent_unlocked(talent_id: String) -> bool:
+    return bool(unlocked_talents.get(talent_id, false))
+
+
+func unlock_talent(talent_id: String) -> bool:
+    if talent_id.is_empty() or ConfigDB.get_talent(talent_id).is_empty():
+        return false
+    if is_talent_unlocked(talent_id):
+        return false
+    unlocked_talents[talent_id] = true
+    EventBus.talent_unlocked.emit(talent_id)
+    return true
+
+
+func reset_talents() -> bool:
+    if unlocked_talents.is_empty():
+        return false
+    unlocked_talents.clear()
+    EventBus.talents_reset.emit()
+    return true
+
+
+func get_talent_points_earned() -> int:
+    var earned: int = 0
+    for milestone in ConfigDB.get_talent_point_milestones():
+        if total_bottles < int(milestone):
+            break
+        earned += 1
+    return earned
+
+
+func get_talent_points_spent() -> int:
+    var spent: int = 0
+    for talent_id in unlocked_talents.keys():
+        var row: Dictionary = ConfigDB.get_talent(String(talent_id))
+        spent += maxi(0, int(row.get("point_cost", 1)))
+    return spent
+
+
+func get_available_talent_points() -> int:
+    return maxi(0, get_talent_points_earned() - get_talent_points_spent())
+
+
+func get_next_talent_point_milestone() -> int:
+    for milestone in ConfigDB.get_talent_point_milestones():
+        if total_bottles < int(milestone):
+            return int(milestone)
+    return -1
+
+
+func get_talent_effect_total(effect_id: String) -> float:
+    var total: float = 0.0
+    for talent_id in unlocked_talents.keys():
+        var row: Dictionary = ConfigDB.get_talent(String(talent_id))
+        var effects: Dictionary = row.get("effects", {})
+        total += float(effects.get(effect_id, 0.0))
+    return total
+
+
 func is_defense_level_unlocked(level_id: int) -> bool:
     return level_id >= 1 and level_id <= defense_highest_unlocked_level and level_id <= ConfigDB.get_defense_max_level()
 
@@ -345,6 +427,7 @@ func to_dict() -> Dictionary:
         "unlocked_drops": unlocked_drops,
         "purchased_helpers": purchased_helpers,
         "active_helpers": active_helpers,
+        "unlocked_talents": unlocked_talents,
         "scene_drop_inventories": scene_drop_inventories,
         "scene_drop_serials": scene_drop_serials,
         "next_scene_drop_serial": next_scene_drop_serial,
@@ -371,6 +454,7 @@ func from_dict(d: Dictionary) -> void:
         active_helpers = _bool_key_dict(d.get("active_helpers", {}))
     else:
         active_helpers = purchased_helpers.duplicate()
+    unlocked_talents = _bool_key_dict(d.get("unlocked_talents", {}))
     scene_drop_inventories = _scene_drop_inventory_dict(d.get("scene_drop_inventories", {}))
     scene_drop_serials = _scene_drop_serial_dict(d.get("scene_drop_serials", {}))
     next_scene_drop_serial = maxi(1, int(d.get("next_scene_drop_serial", 1)))
@@ -382,6 +466,7 @@ func from_dict(d: Dictionary) -> void:
     _apply_unlock_upgrades_to_state()
     _sanitize_upgrade_levels()
     _sanitize_active_helpers()
+    _sanitize_unlocked_talents()
     _sanitize_scene_drop_inventories()
     _sanitize_defense_progress()
     _sanitize_drop_collection_counts()
@@ -575,6 +660,22 @@ func _sanitize_active_helpers() -> void:
         if has_helper(helper_id) and not ConfigDB.get_helper(helper_id).is_empty():
             sanitized[helper_id] = true
     active_helpers = sanitized
+
+
+func _sanitize_unlocked_talents() -> void:
+    var sanitized: Dictionary = {}
+    for row in ConfigDB.get_talents():
+        var talent_id: String = String(row.get("id", ""))
+        if not bool(unlocked_talents.get(talent_id, false)):
+            continue
+        var requirements_met: bool = true
+        for required_id in row.get("requires", []):
+            if not bool(sanitized.get(String(required_id), false)):
+                requirements_met = false
+                break
+        if requirements_met:
+            sanitized[talent_id] = true
+    unlocked_talents = sanitized
 
 
 func _sanitize_defense_progress() -> void:

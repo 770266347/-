@@ -41,7 +41,7 @@ func _apply_layout() -> void:
 	if hud.has_method("apply_layout"):
 		hud.apply_layout(viewport_size)
 
-	var panel_height: float = minf(bottom_panel_height, maxf(190.0 * scale, viewport_size.y * 0.255))
+	var panel_height: float = minf(bottom_panel_height, maxf(190.0 * scale, viewport_size.y * 0.28))
 	var panel_top: float = maxf(top_height + 360.0 * scale, viewport_size.y - panel_height - margin)
 	var bottle_height: float = maxf(430.0 * scale, panel_top - bottle_top)
 	bottle_area.position = Vector2.ZERO

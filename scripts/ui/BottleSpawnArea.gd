@@ -779,7 +779,12 @@ func _update_helper(helper: TextureRect, delta: float) -> void:
 		return
 
 	var target_center: Vector2 = target.position + target.size * 0.5
-	_move_helper_toward(helper, target_center, float(row.get("speed", 80.0)), delta)
+	_move_helper_toward(
+		helper,
+		target_center,
+		float(row.get("speed", 80.0)) * GameState.get_helper_speed_multiplier(),
+		delta
+	)
 	if _helper_distance_to(helper, target_center) > float(row.get("collect_radius", 24.0)) * _ui_scale():
 		return
 	if cooldown_remaining > 0.0:
@@ -787,7 +792,10 @@ func _update_helper(helper: TextureRect, delta: float) -> void:
 
 	if _collect_drop_item(target):
 		_release_helper_target(helper)
-		helper.set_meta("cooldown_remaining", float(row.get("collect_cooldown", 1.0)))
+		helper.set_meta(
+			"cooldown_remaining",
+			float(row.get("collect_cooldown", 1.0)) * GameState.get_helper_cooldown_multiplier()
+		)
 	else:
 		_release_helper_target(helper)
 
@@ -799,7 +807,12 @@ func _update_helper_wander(helper: TextureRect, row: Dictionary, delta: float) -
 	if _helper_distance_to(helper, wander_target) <= HELPER_WANDER_ARRIVE_PT * _ui_scale():
 		wander_target = _random_helper_center_position()
 		helper.set_meta("wander_target", wander_target)
-	_move_helper_toward(helper, wander_target, float(row.get("speed", 80.0)) * 0.45, delta)
+	_move_helper_toward(
+		helper,
+		wander_target,
+		float(row.get("speed", 80.0)) * GameState.get_helper_speed_multiplier() * 0.45,
+		delta
+	)
 
 
 func _find_helper_target(helper: TextureRect, row: Dictionary) -> TextureRect:

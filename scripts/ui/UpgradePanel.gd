@@ -1,20 +1,23 @@
 extends Control
-## Bottom panel: compact upgrade, scene unlock, and helper purchase tabs.
+## Bottom panel: compact upgrade, scene, helper, and talent tabs.
 
 const BASE_LOGICAL_WIDTH: float = 393.0
 const TAB_PRICE: String = "price"
 const TAB_SCENE: String = "scene"
 const TAB_HELPER: String = "helper"
+const TAB_TALENT: String = "talent"
 const UPGRADE_SCOPE_GLOBAL: String = "global"
 const SUBTAB_DRAG_THRESHOLD_PT: float = 8.0
 const LIST_DRAG_THRESHOLD_PT: float = 8.0
 const LIST_CLICK_DEDUP_MS: int = 90
+const TALENT_TREE_SCRIPT: Script = preload("res://scripts/ui/TalentTree.gd")
 
 var panel_container: PanelContainer
 var tab_bar: HBoxContainer
 var price_tab_button: Button
 var scene_tab_button: Button
 var helper_tab_button: Button
+var talent_tab_button: Button
 var upgrade_subtab_viewport: Control
 var upgrade_subtab_scroll: ScrollContainer
 var upgrade_subtab_bar: HBoxContainer
@@ -24,6 +27,7 @@ var list_viewport: Control
 var list_scroll: ScrollContainer
 var list_input_layer: Control
 var list: VBoxContainer
+var talent_tree: Control
 var _selected_tab: String = TAB_PRICE
 var _selected_upgrade_scope: String = UPGRADE_SCOPE_GLOBAL
 var _subtab_pointer_active: bool = false
@@ -83,6 +87,12 @@ func _build() -> void:
 	helper_tab_button.pressed.connect(func(): _select_tab(TAB_HELPER))
 	tab_bar.add_child(helper_tab_button)
 
+	talent_tab_button = Button.new()
+	talent_tab_button.text = "天赋"
+	talent_tab_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	talent_tab_button.pressed.connect(func(): _select_tab(TAB_TALENT))
+	tab_bar.add_child(talent_tab_button)
+
 	upgrade_subtab_viewport = Control.new()
 	upgrade_subtab_viewport.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_child(upgrade_subtab_viewport)
@@ -126,6 +136,12 @@ func _build() -> void:
 	list_input_layer.gui_input.connect(_on_list_overlay_input)
 	list_viewport.add_child(list_input_layer)
 
+	talent_tree = TALENT_TREE_SCRIPT.new()
+	talent_tree.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	talent_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	talent_tree.visible = false
+	box.add_child(talent_tree)
+
 
 func _build_upgrade_subtabs() -> void:
 	upgrade_subtab_buttons.clear()
@@ -150,6 +166,8 @@ func _select_tab(tab_id: String) -> void:
 		return
 	_selected_tab = tab_id
 	_refresh()
+	if tab_id == TAB_TALENT and talent_tree != null:
+		talent_tree.focus_center()
 
 
 func _select_upgrade_scope(scope_id: String) -> void:
@@ -358,12 +376,18 @@ func _refresh() -> void:
 	_refresh_tabs()
 	if upgrade_subtab_viewport != null:
 		upgrade_subtab_viewport.visible = _selected_tab == TAB_PRICE
+	if list_viewport != null:
+		list_viewport.visible = _selected_tab != TAB_TALENT
+	if talent_tree != null:
+		talent_tree.visible = _selected_tab == TAB_TALENT
 	_refresh_upgrade_subtabs()
 	match _selected_tab:
 		TAB_SCENE:
 			_build_scene_buttons()
 		TAB_HELPER:
 			_build_helper_buttons()
+		TAB_TALENT:
+			talent_tree.refresh()
 		_:
 			_build_upgrade_buttons()
 	apply_layout(get_viewport_rect().size)
@@ -597,11 +621,12 @@ func _clear_list() -> void:
 
 
 func _refresh_tabs() -> void:
-	if price_tab_button == null or scene_tab_button == null or helper_tab_button == null:
+	if price_tab_button == null or scene_tab_button == null or helper_tab_button == null or talent_tab_button == null:
 		return
 	price_tab_button.disabled = _selected_tab == TAB_PRICE
 	scene_tab_button.disabled = _selected_tab == TAB_SCENE
 	helper_tab_button.disabled = _selected_tab == TAB_HELPER
+	talent_tab_button.disabled = _selected_tab == TAB_TALENT
 
 
 func _refresh_upgrade_subtabs() -> void:
@@ -635,6 +660,10 @@ func apply_layout(viewport_size: Vector2) -> void:
 		_style_tab_button(scene_tab_button, scale)
 	if helper_tab_button != null:
 		_style_tab_button(helper_tab_button, scale)
+	if talent_tab_button != null:
+		_style_tab_button(talent_tab_button, scale)
+	if talent_tree != null:
+		talent_tree.apply_layout(viewport_size)
 	if list != null:
 		list.add_theme_constant_override("separation", int(5.0 * scale))
 	for child in list.get_children():

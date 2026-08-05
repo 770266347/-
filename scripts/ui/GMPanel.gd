@@ -118,7 +118,7 @@ func _build() -> void:
 
 	reset_button = Button.new()
 	reset_button.text = "重置全部数据"
-	reset_button.tooltip_text = "清空现金、回收物、升级、场景、帮手和场景库存"
+	reset_button.tooltip_text = "清空现金、回收物、升级、场景、帮手、天赋和场景库存"
 	reset_button.pressed.connect(_on_reset_requested)
 	panel_box.add_child(reset_button)
 
