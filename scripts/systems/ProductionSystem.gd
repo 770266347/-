@@ -25,17 +25,21 @@ func collect_drop(drop: Dictionary, screen_pos: Vector2) -> void:
 
 
 func _grant_collectable(drop_id: String, bottle_amount: int, cash_amount: float, drop_name: String, screen_pos: Vector2) -> void:
-    ## 先写入权威状态再广播事件，保证监听者读到的是更新后的总量。
+    ## 自动装袋只按实际拾取数推进；奖励会增加对应产物数量但不增加现金，
+    ## 也不会再次传入进度函数，因此不会递归触发下一次装袋。
     if bottle_amount <= 0:
         return
-    GameState.record_drop_collection(drop_id, bottle_amount)
-    GameState.add_bottles(bottle_amount)
+    var bag_bonus: int = GameState.advance_auto_bag_progress(bottle_amount)
+    var total_bottle_amount: int = bottle_amount + bag_bonus
+    GameState.record_drop_collection(drop_id, total_bottle_amount)
+    GameState.add_bottles(total_bottle_amount)
     GameState.add_currency(cash_amount)
-    EventBus.bottle_collected.emit(bottle_amount, cash_amount, screen_pos)
-    EventBus.drop_collected.emit(drop_name, bottle_amount, cash_amount, screen_pos)
+    EventBus.bottle_collected.emit(total_bottle_amount, cash_amount, screen_pos)
+    EventBus.drop_collected.emit(drop_name, total_bottle_amount, cash_amount, screen_pos)
     if screen_pos != Vector2.ZERO:
+        var bag_text: String = "（装袋 +%d）" % bag_bonus if bag_bonus > 0 else ""
         EventBus.number_popup.emit(
             screen_pos,
-            "+%d %s +%s 元" % [bottle_amount, drop_name, BigNumber.format(cash_amount)],
+            "+%d %s%s +%s 元" % [total_bottle_amount, drop_name, bag_text, BigNumber.format(cash_amount)],
             Color(0.4, 0.95, 0.55)
         )

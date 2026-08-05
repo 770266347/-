@@ -25,6 +25,7 @@ const PORTAL_Z_INDEX: int = 2600
 const OVERLAY_Z_INDEX: int = 3000
 const POPUP_Z_INDEX: int = 3100
 const COLLECT_INPUT_DEDUP_MS: int = 90
+const TALENT_RUSH_INTERVAL_SEC: float = 30.0
 const PORTAL_SIZE_PT: Vector2 = Vector2(38.0, 76.0)
 const TRANSITION_HELPER_SPEED_PT: float = 180.0
 const TRANSITION_ARRIVE_PT: float = 8.0
@@ -48,6 +49,12 @@ var _transition_timer: float = 0.0
 var _drop_input_enabled: bool = true
 var _last_collect_input_msec: int = -COLLECT_INPUT_DEDUP_MS
 var _defense_mode_active: bool = false
+var _talent_rush_timer: float = 0.0
+var _manual_hold_active: bool = false
+var _manual_hold_timer: float = 0.0
+var _manual_hold_position: Vector2 = Vector2.ZERO
+var _manual_combo_count: int = 0
+var _manual_combo_timer: float = 0.0
 
 
 func _ready() -> void:
@@ -68,6 +75,8 @@ func _ready() -> void:
 	EventBus.upgrade_purchased.connect(_on_upgrade_purchased)
 	EventBus.helper_purchased.connect(_on_helper_purchased)
 	EventBus.helper_active_changed.connect(_on_helper_active_changed)
+	EventBus.talent_unlocked.connect(func(_talent_id: String): _reset_talent_timers())
+	EventBus.talents_reset.connect(_reset_talent_timers)
 	_reset_all_scene_spawn_timers(0.1)
 	set_process(true)
 
@@ -82,6 +91,9 @@ func _process(delta: float) -> void:
 	if _transition_state != TRANSITION_IDLE:
 		_update_scene_transition(delta)
 		return
+	_update_manual_combo(delta)
+	_update_manual_hold(delta)
+	_update_talent_rush(delta)
 	_update_helpers(delta)
 
 
@@ -89,6 +101,7 @@ func set_defense_mode_active(active: bool) -> void:
 	## 防守模式打开时暂停产物输入和帮手工作，返回时重新寻找目标。
 	_defense_mode_active = active
 	_drop_input_enabled = not active
+	_manual_hold_active = false
 	if active:
 		_reset_helper_targets()
 
@@ -252,32 +265,104 @@ func _drop_placement_for_serial(scene_id: String, serial: int) -> Vector2:
 
 
 func _gui_input(event: InputEvent) -> void:
-	## 处理鼠标/触摸点击，并通过时间去重防止一次输入收集多个产物。
-	var pointer_position: Vector2
-	var pressed: bool = false
+	## 处理点击和长按。轻点只收集一个最上层产物，长按功能开启后才会
+	## 按固定间隔继续收集；释放或拖动离开会停止连续拾取。
+	var pointer_position: Vector2 = Vector2.ZERO
+	var is_press_event: bool = false
+	var is_release_event: bool = false
 	if event is InputEventMouseButton:
 		var mouse_button: InputEventMouseButton = event as InputEventMouseButton
-		pressed = mouse_button.pressed and mouse_button.button_index == MOUSE_BUTTON_LEFT
+		if mouse_button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		is_press_event = mouse_button.pressed
+		is_release_event = not mouse_button.pressed
 		pointer_position = mouse_button.position
 	elif event is InputEventScreenTouch:
 		var touch: InputEventScreenTouch = event as InputEventScreenTouch
-		pressed = touch.pressed
+		is_press_event = touch.pressed
+		is_release_event = not touch.pressed
 		pointer_position = touch.position
 	else:
 		return
-	if not pressed or not _drop_input_enabled or _transition_state != TRANSITION_IDLE:
+	if not _drop_input_enabled or _transition_state != TRANSITION_IDLE:
+		return
+	if is_release_event:
+		_manual_hold_active = false
+		accept_event()
+		return
+	if not is_press_event:
 		return
 
 	var now_msec: int = Time.get_ticks_msec()
-	if now_msec - _last_collect_input_msec < COLLECT_INPUT_DEDUP_MS:
+	var dedup_ms: int = int(round(COLLECT_INPUT_DEDUP_MS * GameState.get_manual_input_dedup_multiplier()))
+	if now_msec - _last_collect_input_msec < dedup_ms:
 		accept_event()
 		return
 	var item: TextureRect = _top_drop_at_position(pointer_position)
-	if item == null:
-		return
-	_last_collect_input_msec = now_msec
-	_collect_drop_item(item)
+	if item != null:
+		_last_collect_input_msec = now_msec
+		_collect_drop_item(item, true)
+	_begin_manual_hold(pointer_position)
 	accept_event()
+
+
+func _begin_manual_hold(pointer_position: Vector2) -> void:
+	## 中心天赋点亮后，按住场景进入连续拾取状态。
+	var interval: float = GameState.get_manual_hold_interval()
+	if interval <= 0.0:
+		return
+	_manual_hold_active = true
+	_manual_hold_position = pointer_position
+	_manual_hold_timer = interval
+
+
+func _update_manual_hold(delta: float) -> void:
+	## 按连续拾取间隔选择一个目标；指向空白处时退化为选择当前最上层产物。
+	if not _manual_hold_active or not _drop_input_enabled:
+		return
+	var interval: float = GameState.get_manual_hold_interval()
+	if interval <= 0.0:
+		_manual_hold_active = false
+		return
+	_manual_hold_timer -= delta
+	if _manual_hold_timer > 0.0:
+		return
+	var combo_active: bool = _manual_combo_timer > 0.0
+	var speed_multiplier: float = GameState.get_manual_combo_speed_multiplier(combo_active)
+	_manual_hold_timer += interval / maxf(1.0, speed_multiplier)
+	var item: TextureRect = _top_drop_at_position(_manual_hold_position)
+	if item == null:
+		item = _topmost_drop()
+	if item != null:
+		_collect_drop_item(item, true)
+
+
+func _register_manual_collect() -> void:
+	## 连点节奏只统计玩家的实际拾取，不把帮手或自动装袋奖励计入连点。
+	var requirement: int = GameState.get_manual_combo_requirement()
+	if requirement <= 0:
+		return
+	_manual_combo_count += 1
+	if _manual_combo_count >= requirement:
+		_manual_combo_count = 0
+		_manual_combo_timer = GameState.get_manual_combo_duration()
+
+
+func _update_manual_combo(delta: float) -> void:
+	## 连点增益结束后自动恢复普通连续拾取速度。
+	if _manual_combo_timer > 0.0:
+		_manual_combo_timer = maxf(0.0, _manual_combo_timer - delta)
+
+
+func _reset_talent_timers() -> void:
+	## 天赋点亮或重置后清理临时状态，并立即让刷新间隔读取新效果。
+	_talent_rush_timer = 0.0
+	_manual_hold_active = false
+	_manual_hold_timer = 0.0
+	_manual_combo_count = 0
+	_manual_combo_timer = 0.0
+	if is_inside_tree():
+		_reset_all_scene_spawn_timers()
 
 
 func _top_drop_at_position(pointer_position: Vector2) -> TextureRect:
@@ -301,6 +386,25 @@ func _top_drop_at_position(pointer_position: Vector2) -> TextureRect:
 	return top_item
 
 
+func _topmost_drop() -> TextureRect:
+	## 在长按没有指向具体产物时，选择当前画面最上层的一个产物。
+	var top_item: TextureRect = null
+	var top_z_index: int = -1
+	var top_child_index: int = -1
+	for child in get_children():
+		var item: TextureRect = child as TextureRect
+		if item == null or item.is_queued_for_deletion():
+			continue
+		if not bool(item.get_meta("is_drop", false)) or bool(item.get_meta("collected", false)):
+			continue
+		var child_index: int = item.get_index()
+		if item.z_index > top_z_index or (item.z_index == top_z_index and child_index > top_child_index):
+			top_item = item
+			top_z_index = item.z_index
+			top_child_index = child_index
+	return top_item
+
+
 func _update_drop_layer(item: TextureRect, glow: TextureRect) -> void:
 	## 根据产物位置和唯一层级更新 z_index 与选中光晕。
 	var logical_y: float = item.position.y / _ui_scale()
@@ -309,7 +413,7 @@ func _update_drop_layer(item: TextureRect, glow: TextureRect) -> void:
 		glow.z_index = item.z_index - 1
 
 
-func _collect_drop_item(item: TextureRect) -> bool:
+func _collect_drop_item(item: TextureRect, is_manual_collect: bool = false) -> bool:
 	## 先按 serial 从 GameState 移除实例，再调用 ProductionSystem，确保只结算一次。
 	if item == null or not is_instance_valid(item):
 		return false
@@ -326,6 +430,8 @@ func _collect_drop_item(item: TextureRect) -> bool:
 	var system: ProductionSystem = get_tree().root.get_node_or_null("Main/Systems/ProductionSystem") as ProductionSystem
 	if system != null:
 		system.collect_drop(drop, item.global_position + item.size * 0.5)
+	if is_manual_collect:
+		_register_manual_collect()
 	_despawn_drop(item)
 	_sync_current_scene_visible_drops()
 	return true
@@ -403,6 +509,11 @@ func _update_scene_production(delta: float) -> void:
 			if GameState.add_scene_drop(scene_id, String(drop.get("id", ""))):
 				if scene_id == GameState.current_scene_id and _transition_state == TRANSITION_IDLE:
 					_sync_current_scene_visible_drops()
+				var extra_chance: float = clampf(GameState.get_talent_effect_total("extra_spawn_chance"), 0.0, 1.0)
+				if extra_chance > 0.0 and _rng.randf() < extra_chance and GameState.get_scene_drop_count(scene_id) < GameState.get_scene_capacity(scene_id):
+					var extra_drop: Dictionary = _pick_weighted_drop(drops)
+					if GameState.add_scene_drop(scene_id, String(extra_drop.get("id", ""))) and scene_id == GameState.current_scene_id and _transition_state == TRANSITION_IDLE:
+						_sync_current_scene_visible_drops()
 		_reset_scene_spawn_timer(scene_id, 0.8 if drops.is_empty() else -1.0)
 
 
@@ -415,6 +526,13 @@ func _reset_scene_spawn_timer(scene_id: String, first_delay: float = -1.0) -> vo
 	if scene.is_empty():
 		return
 	var interval_multiplier: float = GameState.get_global_spawn_interval_multiplier()
+	var low_inventory_bonus: float = GameState.get_talent_effect_total("low_inventory_spawn_bonus")
+	var low_inventory_threshold: float = GameState.get_talent_effect_total("low_inventory_threshold")
+	var capacity: int = GameState.get_scene_capacity(scene_id)
+	if capacity > 0 and low_inventory_bonus > 0.0 and low_inventory_threshold > 0.0:
+		var inventory_ratio: float = float(GameState.get_scene_drop_count(scene_id)) / float(capacity)
+		if inventory_ratio < low_inventory_threshold:
+			interval_multiplier *= maxf(0.4, 1.0 - low_inventory_bonus)
 	_scene_spawn_timers[scene_id] = _rng.randf_range(
 		float(scene.get("spawn_interval_min", 0.65)) * interval_multiplier,
 		float(scene.get("spawn_interval_max", 1.25)) * interval_multiplier
@@ -427,6 +545,27 @@ func _reset_all_scene_spawn_timers(first_delay: float = -1.0) -> void:
 		var scene_id: String = String(scene.get("id", ""))
 		if not scene_id.is_empty() and GameState.is_scene_unlocked(scene_id):
 			_reset_scene_spawn_timer(scene_id, first_delay)
+
+
+func _update_talent_rush(delta: float) -> void:
+	## 回收热潮每 30 秒向当前场景后台库存补充额外产物，仍受场景容量限制。
+	var rush_count: int = maxi(0, int(round(GameState.get_talent_effect_total("rush_spawn_count"))))
+	if rush_count <= 0:
+		_talent_rush_timer = 0.0
+		return
+	_talent_rush_timer += delta
+	if _talent_rush_timer < TALENT_RUSH_INTERVAL_SEC:
+		return
+	_talent_rush_timer -= TALENT_RUSH_INTERVAL_SEC
+	var drops: Array = _get_available_drops()
+	if drops.is_empty():
+		return
+	for _index in range(rush_count):
+		if GameState.get_scene_drop_count(GameState.current_scene_id) >= GameState.get_scene_capacity(GameState.current_scene_id):
+			break
+		var drop: Dictionary = _pick_weighted_drop(drops)
+		if GameState.add_scene_drop(GameState.current_scene_id, String(drop.get("id", ""))) and _transition_state == TRANSITION_IDLE:
+			_sync_current_scene_visible_drops()
 
 
 func _on_drop_collected(drop_name: String, amount: int, cash_amount: float, screen_pos: Vector2) -> void:
@@ -836,7 +975,9 @@ func _update_helper(helper: TextureRect, delta: float) -> void:
 	_move_helper_toward(
 		helper,
 		target_center,
-		float(row.get("speed", 80.0)) * GameState.get_helper_speed_multiplier(),
+		float(row.get("speed", 80.0))
+			* GameState.get_helper_speed_multiplier()
+			* GameState.get_full_load_helper_speed_multiplier(GameState.current_scene_id),
 		delta
 	)
 	if _helper_distance_to(helper, target_center) > float(row.get("collect_radius", 24.0)) * _ui_scale():
@@ -865,7 +1006,10 @@ func _update_helper_wander(helper: TextureRect, row: Dictionary, delta: float) -
 	_move_helper_toward(
 		helper,
 		wander_target,
-		float(row.get("speed", 80.0)) * GameState.get_helper_speed_multiplier() * 0.45,
+		float(row.get("speed", 80.0))
+			* GameState.get_helper_speed_multiplier()
+			* GameState.get_full_load_helper_speed_multiplier(GameState.current_scene_id)
+			* 0.45,
 		delta
 	)
 

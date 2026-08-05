@@ -4,7 +4,7 @@ extends Node
 ## 负责自动保存节奏、JSON 序列化和版本迁移入口；实际读写由 PlatformBridge 完成。
 ## 默认值与字段合法性由 GameState 负责，避免迁移规则散落在 UI 中。
 
-const LATEST_VERSION: int = 11
+const LATEST_VERSION: int = 12
 
 var autosave_interval: float = 15.0
 var _timer: float = 0.0

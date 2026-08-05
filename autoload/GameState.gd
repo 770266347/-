@@ -5,8 +5,9 @@ extends Node
 ## UI 不应直接改字典；所有资源、解锁、库存和天赋变化都通过公开方法完成，
 ## 这样才能统一校验、统计和 EventBus 通知。
 
-const SAVE_VERSION: int = 11
+const SAVE_VERSION: int = 12
 const BASE_BOTTLE_VALUE: float = 1.0
+const FULL_LOAD_THRESHOLD: float = 0.8
 const GLOBAL_VALUE_UPGRADE_ID: String = "upgrade_global_value"
 const GLOBAL_SPAWN_UPGRADE_ID: String = "upgrade_global_spawn"
 const GLOBAL_CAPACITY_UPGRADE_ID: String = "upgrade_global_capacity"
@@ -30,6 +31,8 @@ var purchased_helpers: Dictionary = {}
 var active_helpers: Dictionary = {}
 # talent_id -> true；天赋点余额由里程碑减去这些节点的 point_cost 推导。
 var unlocked_talents: Dictionary = {}
+# 自动装袋只累计实际拾取量；奖励产物不会再次推进此进度。
+var auto_bag_progress: int = 0
 # scene_id -> Array[drop_id]；保存后台库存的真实顺序。
 var scene_drop_inventories: Dictionary = {}
 # scene_id -> Array[serial]；与产物数组一一对应，用于切场景后稳定复原位置。
@@ -56,6 +59,7 @@ func reset_to_default() -> void:
     purchased_helpers.clear()
     active_helpers.clear()
     unlocked_talents.clear()
+    auto_bag_progress = 0
     scene_drop_inventories.clear()
     scene_drop_serials.clear()
     next_scene_drop_serial = 1
@@ -163,13 +167,61 @@ func get_global_capacity_bonus() -> int:
 
 
 func get_helper_speed_multiplier() -> float:
-    ## 返回帮手移动速度倍率，按帧读取以便天赋点亮后立即生效。
-    return 1.0 + get_talent_effect_total("helper_speed_bonus")
+    ## 返回帮手移动速度倍率；团队协作按当前上阵帮手数量额外叠加，最多 20%。
+    var team_bonus: float = minf(
+        get_talent_effect_total("helper_team_efficiency_bonus") * float(active_helpers.size()),
+        0.2
+    )
+    return 1.0 + get_talent_effect_total("helper_speed_bonus") + team_bonus
 
 
 func get_helper_cooldown_multiplier() -> float:
-    ## 返回帮手收集冷却倍率，并限制过低冷却造成过度刷钱。
-    return maxf(0.5, 1.0 - get_talent_effect_total("helper_cooldown_reduction"))
+    ## 返回帮手收集冷却倍率；团队协作同样提升周转效率，并限制过低冷却。
+    var team_bonus: float = minf(
+        get_talent_effect_total("helper_team_efficiency_bonus") * float(active_helpers.size()),
+        0.2
+    )
+    return maxf(0.5, 1.0 - get_talent_effect_total("helper_cooldown_reduction") - team_bonus)
+
+
+func get_manual_hold_interval() -> float:
+    ## 返回玩家长按连续拾取间隔；未点亮中心天赋时返回 -1 表示功能关闭。
+    if get_talent_effect_total("manual_hold_enabled") <= 0.0:
+        return -1.0
+    var interval: float = 0.8 - get_talent_effect_total("manual_hold_interval_reduction")
+    return maxf(0.25, interval)
+
+
+func get_manual_input_dedup_multiplier() -> float:
+    ## 返回玩家点击去重时间倍率，避免闪电拾取让同一输入重复结算。
+    return maxf(0.4, 1.0 - get_talent_effect_total("manual_input_dedup_reduction"))
+
+
+func get_manual_combo_speed_multiplier(combo_active: bool) -> float:
+    ## 连点节奏激活期间缩短长按拾取间隔；没有激活时保持原速。
+    if not combo_active:
+        return 1.0
+    return 1.0 + get_talent_effect_total("manual_combo_speed_bonus")
+
+
+func get_manual_combo_requirement() -> int:
+    ## 返回触发连点节奏所需的实际手动拾取次数。
+    return maxi(0, int(round(get_talent_effect_total("manual_combo_requirement"))))
+
+
+func get_manual_combo_duration() -> float:
+    ## 返回连点节奏的持续秒数。
+    return maxf(0.0, get_talent_effect_total("manual_combo_duration"))
+
+
+func get_full_load_helper_speed_multiplier(scene_id: String) -> float:
+    ## 满载加班只在指定场景库存达到容量 80% 时提供额外移动速度。
+    var bonus: float = get_talent_effect_total("full_load_helper_speed_bonus")
+    var capacity: int = get_scene_capacity(scene_id)
+    if bonus <= 0.0 or capacity <= 0:
+        return 1.0
+    var load_ratio: float = float(get_scene_drop_count(scene_id)) / float(capacity)
+    return 1.0 + bonus if load_ratio >= FULL_LOAD_THRESHOLD else 1.0
 
 
 func set_current_scene_id(scene_id: String) -> bool:
@@ -397,9 +449,10 @@ func unlock_talent(talent_id: String) -> bool:
 
 func reset_talents() -> bool:
     ## 清空天赋节点但保留累计回收数据，调用方可立即保存。
-    if unlocked_talents.is_empty():
+    if unlocked_talents.is_empty() and auto_bag_progress <= 0:
         return false
     unlocked_talents.clear()
+    auto_bag_progress = 0
     EventBus.talents_reset.emit()
     return true
 
@@ -446,6 +499,20 @@ func get_talent_effect_total(effect_id: String) -> float:
     return total
 
 
+func advance_auto_bag_progress(actual_collected_amount: int) -> int:
+    ## 推进自动装袋计数并返回本次应奖励的对应产物数量。
+    ## 传入值必须是实际拾取数，调用方不能把上次奖励再次传入。
+    var interval: int = int(round(get_talent_effect_total("auto_bag_interval")))
+    var bonus_per_trigger: int = int(round(get_talent_effect_total("auto_bag_bonus")))
+    if interval <= 0 or bonus_per_trigger <= 0:
+        auto_bag_progress = 0
+        return 0
+    auto_bag_progress += maxi(0, actual_collected_amount)
+    var trigger_count: int = floori(float(auto_bag_progress) / float(interval))
+    auto_bag_progress %= interval
+    return trigger_count * bonus_per_trigger
+
+
 func is_defense_level_unlocked(level_id: int) -> bool:
     ## 关卡必须同时满足玩家进度和配置上限。
     return level_id >= 1 and level_id <= defense_highest_unlocked_level and level_id <= ConfigDB.get_defense_max_level()
@@ -484,6 +551,7 @@ func to_dict() -> Dictionary:
         "purchased_helpers": purchased_helpers,
         "active_helpers": active_helpers,
         "unlocked_talents": unlocked_talents,
+        "auto_bag_progress": auto_bag_progress,
         "scene_drop_inventories": scene_drop_inventories,
         "scene_drop_serials": scene_drop_serials,
         "next_scene_drop_serial": next_scene_drop_serial,
@@ -512,6 +580,7 @@ func from_dict(d: Dictionary) -> void:
     else:
         active_helpers = purchased_helpers.duplicate()
     unlocked_talents = _bool_key_dict(d.get("unlocked_talents", {}))
+    auto_bag_progress = maxi(0, int(d.get("auto_bag_progress", 0)))
     scene_drop_inventories = _scene_drop_inventory_dict(d.get("scene_drop_inventories", {}))
     scene_drop_serials = _scene_drop_serial_dict(d.get("scene_drop_serials", {}))
     next_scene_drop_serial = maxi(1, int(d.get("next_scene_drop_serial", 1)))
@@ -524,6 +593,7 @@ func from_dict(d: Dictionary) -> void:
     _sanitize_upgrade_levels()
     _sanitize_active_helpers()
     _sanitize_unlocked_talents()
+    _sanitize_auto_bag_progress()
     _sanitize_scene_drop_inventories()
     _sanitize_defense_progress()
     _sanitize_drop_collection_counts()
@@ -745,6 +815,15 @@ func _sanitize_unlocked_talents() -> void:
         if requirements_met:
             sanitized[talent_id] = true
     unlocked_talents = sanitized
+
+
+func _sanitize_auto_bag_progress() -> void:
+    ## 旧存档没有自动装袋字段时使用零；未点亮节点时不能保留隐藏进度。
+    var interval: int = int(round(get_talent_effect_total("auto_bag_interval")))
+    if interval <= 0:
+        auto_bag_progress = 0
+        return
+    auto_bag_progress = clampi(auto_bag_progress, 0, interval - 1)
 
 
 func _sanitize_defense_progress() -> void:
