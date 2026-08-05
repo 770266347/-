@@ -17,7 +17,7 @@ var _defense_mode_active: bool = false
 
 
 func _ready() -> void:
-    ## 桌面端使用手机大小测试窗口，并连接全局模式切换事件。
+	## 桌面端使用手机大小测试窗口，并连接全局模式切换事件。
 	if PlatformBridge.is_desktop():
 		call_deferred("_fit_desktop_test_window")
 	get_tree().root.size_changed.connect(_on_size_changed)
@@ -27,12 +27,12 @@ func _ready() -> void:
 
 
 func _on_size_changed() -> void:
-    ## 窗口、旋转或小游戏容器尺寸变化时重新计算全部区域。
+	## 窗口、旋转或小游戏容器尺寸变化时重新计算全部区域。
 	_apply_layout()
 
 
 func _apply_layout() -> void:
-    ## 自上而下确定 HUD、回收区、底部工具面板和全屏防守层的边界。
+	## 自上而下确定 HUD、回收区、底部工具面板和全屏防守层的边界。
 	var viewport_size: Vector2 = get_viewport_rect().size
 	var scale: float = _ui_scale(viewport_size)
 	var margin: float = MARGIN_PT * scale
@@ -69,7 +69,7 @@ func _apply_layout() -> void:
 
 
 func _open_defense_mode() -> void:
-    ## 进入防守玩法时隐藏常规 HUD，并暂停回收场景交互。
+	## 进入防守玩法时隐藏常规 HUD，并暂停回收场景交互。
 	if _defense_mode_active or not _defense_mode_unlocked():
 		return
 	_defense_mode_active = true
@@ -83,7 +83,7 @@ func _open_defense_mode() -> void:
 
 
 func _close_defense_mode() -> void:
-    ## 恢复普通回收界面和产物生成，不重建主场景节点。
+	## 恢复普通回收界面和产物生成，不重建主场景节点。
 	if not _defense_mode_active:
 		return
 	_defense_mode_active = false
@@ -97,7 +97,7 @@ func _close_defense_mode() -> void:
 
 
 func _defense_mode_unlocked() -> bool:
-    ## 当前规则要求配置中的五个场景全部解锁后才能进入防守玩法。
+	## 当前规则要求配置中的五个场景全部解锁后才能进入防守玩法。
 	var scenes: Array = ConfigDB.get_scenes()
 	if scenes.size() < 5:
 		return false
@@ -108,10 +108,10 @@ func _defense_mode_unlocked() -> bool:
 
 
 func _fit_desktop_test_window() -> void:
-    ## PC 只调整测试窗口外观，项目仍按 iPhone 16 视口配置渲染。
+	## PC 只调整测试窗口外观，项目仍按 iPhone 16 视口配置渲染。
 	get_window().size = IPHONE16_LOGICAL_SIZE
 
 
 func _ui_scale(viewport_size: Vector2) -> float:
-    ## 以 393pt 为基准，并禁止窄窗口把点击区域缩得更小。
+	## 以 393pt 为基准，并禁止窄窗口把点击区域缩得更小。
 	return maxf(1.0, viewport_size.x / BASE_LOGICAL_WIDTH)
